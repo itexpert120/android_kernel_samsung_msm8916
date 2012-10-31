@@ -1800,6 +1800,9 @@ int __cpufreq_driver_target(struct cpufreq_policy *policy,
 	if (target_freq < policy->min)
 		target_freq = policy->min;
 
+	if (target_freq == policy->cur)
+		return 0;
+
 	pr_debug("target for CPU %u: %u kHz, relation %u, requested %u kHz\n",
 			policy->cpu, target_freq, relation, old_target_freq);
 
