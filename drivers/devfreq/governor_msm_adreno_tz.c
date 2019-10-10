@@ -51,10 +51,10 @@ static DEFINE_SPINLOCK(tz_lock);
 #define LONG_FRAME		25000
 
 /*
- * CEILING is 50msec, larger than any standard
+ * CEILING is 40msec, larger than any standard
  * frame length, but less than the idle timer.
  */
-#define CEILING			50000
+#define CEILING			40000
 #define TZ_RESET_ID		0x3
 #define TZ_UPDATE_ID		0x4
 #define TZ_INIT_ID		0x6
