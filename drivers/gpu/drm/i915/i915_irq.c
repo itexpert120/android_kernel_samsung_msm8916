@@ -670,7 +670,7 @@ static irqreturn_t valleyview_irq_handler(int irq, void *arg)
 	int pipe;
 	u32 pipe_stats[I915_MAX_PIPES];
 
-	atomic_inc(&dev_priv->irq_received);
+	atomic_inc_unchecked(&dev_priv->irq_received);
 
 	while (true) {
 		iir = I915_READ(VLV_IIR);
@@ -835,7 +835,7 @@ static irqreturn_t ivybridge_irq_handler(int irq, void *arg)
 	irqreturn_t ret = IRQ_NONE;
 	int i;
 
-	atomic_inc(&dev_priv->irq_received);
+	atomic_inc_unchecked(&dev_priv->irq_received);
 
 	/* disable master interrupt before clearing iir  */
 	de_ier = I915_READ(DEIER);
@@ -925,7 +925,7 @@ static irqreturn_t ironlake_irq_handler(int irq, void *arg)
 	int ret = IRQ_NONE;
 	u32 de_iir, gt_iir, de_ier, pm_iir, sde_ier;
 
-	atomic_inc(&dev_priv->irq_received);
+	atomic_inc_unchecked(&dev_priv->irq_received);
 
 	/* disable master interrupt before clearing iir  */
 	de_ier = I915_READ(DEIER);
@@ -2135,7 +2135,7 @@ static void ironlake_irq_preinstall(struct drm_device *dev)
 {
 	drm_i915_private_t *dev_priv = (drm_i915_private_t *) dev->dev_private;
 
-	atomic_set(&dev_priv->irq_received, 0);
+	atomic_set_unchecked(&dev_priv->irq_received, 0);
 
 	I915_WRITE(HWSTAM, 0xeffe);
 
@@ -2170,7 +2170,7 @@ static void valleyview_irq_preinstall(struct drm_device *dev)
 	drm_i915_private_t *dev_priv = (drm_i915_private_t *) dev->dev_private;
 	int pipe;
 
-	atomic_set(&dev_priv->irq_received, 0);
+	atomic_set_unchecked(&dev_priv->irq_received, 0);
 
 	/* VLV magic */
 	I915_WRITE(VLV_IMR, 0);
@@ -2457,7 +2457,7 @@ static void i8xx_irq_preinstall(struct drm_device * dev)
 	drm_i915_private_t *dev_priv = (drm_i915_private_t *) dev->dev_private;
 	int pipe;
 
-	atomic_set(&dev_priv->irq_received, 0);
+	atomic_set_unchecked(&dev_priv->irq_received, 0);
 
 	for_each_pipe(pipe)
 		I915_WRITE(PIPESTAT(pipe), 0);
@@ -2536,7 +2536,7 @@ static irqreturn_t i8xx_irq_handler(int irq, void *arg)
 		I915_DISPLAY_PLANE_A_FLIP_PENDING_INTERRUPT |
 		I915_DISPLAY_PLANE_B_FLIP_PENDING_INTERRUPT;
 
-	atomic_inc(&dev_priv->irq_received);
+	atomic_inc_unchecked(&dev_priv->irq_received);
 
 	iir = I915_READ16(IIR);
 	if (iir == 0)
@@ -2611,7 +2611,7 @@ static void i915_irq_preinstall(struct drm_device * dev)
 	drm_i915_private_t *dev_priv = (drm_i915_private_t *) dev->dev_private;
 	int pipe;
 
-	atomic_set(&dev_priv->irq_received, 0);
+	atomic_set_unchecked(&dev_priv->irq_received, 0);
 
 	if (I915_HAS_HOTPLUG(dev)) {
 		I915_WRITE(PORT_HOTPLUG_EN, 0);
@@ -2710,7 +2710,7 @@ static irqreturn_t i915_irq_handler(int irq, void *arg)
 		I915_DISPLAY_PLANE_B_FLIP_PENDING_INTERRUPT;
 	int pipe, ret = IRQ_NONE;
 
-	atomic_inc(&dev_priv->irq_received);
+	atomic_inc_unchecked(&dev_priv->irq_received);
 
 	iir = I915_READ(IIR);
 	do {
@@ -2837,7 +2837,7 @@ static void i965_irq_preinstall(struct drm_device * dev)
 	drm_i915_private_t *dev_priv = (drm_i915_private_t *) dev->dev_private;
 	int pipe;
 
-	atomic_set(&dev_priv->irq_received, 0);
+	atomic_set_unchecked(&dev_priv->irq_received, 0);
 
 	I915_WRITE(PORT_HOTPLUG_EN, 0);
 	I915_WRITE(PORT_HOTPLUG_STAT, I915_READ(PORT_HOTPLUG_STAT));
@@ -2944,7 +2944,7 @@ static irqreturn_t i965_irq_handler(int irq, void *arg)
 		I915_DISPLAY_PLANE_A_FLIP_PENDING_INTERRUPT |
 		I915_DISPLAY_PLANE_B_FLIP_PENDING_INTERRUPT;
 
-	atomic_inc(&dev_priv->irq_received);
+	atomic_inc_unchecked(&dev_priv->irq_received);
 
 	iir = I915_READ(IIR);
 

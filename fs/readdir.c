@@ -17,6 +17,7 @@
 #include <linux/security.h>
 #include <linux/syscalls.h>
 #include <linux/unistd.h>
+#include <linux/namei.h>
 
 #include <asm/uaccess.h>
 
@@ -84,6 +85,7 @@ struct old_linux_dirent {
 struct readdir_callback {
 	struct dir_context ctx;
 	struct old_linux_dirent __user * dirent;
+	struct file * file;
 	int result;
 };
 
@@ -134,6 +136,7 @@ SYSCALL_DEFINE3(old_readdir, unsigned int, fd,
 	buf.ctx.actor = fillonedir;
 	buf.result = 0;
 	buf.dirent = dirent;
+	buf.file = f.file;
 
 	error = iterate_dir(f.file, &buf.ctx);
 	if (buf.result)
@@ -160,6 +163,7 @@ struct getdents_callback {
 	struct dir_context ctx;
 	struct linux_dirent __user * current_dir;
 	struct linux_dirent __user * previous;
+	struct file * file;
 	int count;
 	int error;
 };
@@ -248,6 +252,7 @@ struct getdents_callback64 {
 	struct dir_context ctx;
 	struct linux_dirent64 __user * current_dir;
 	struct linux_dirent64 __user * previous;
+	struct file *file;
 	int count;
 	int error;
 };
@@ -310,6 +315,7 @@ SYSCALL_DEFINE3(getdents64, unsigned int, fd,
 
 	buf.current_dir = dirent;
 	buf.previous = NULL;
+	buf.file = f.file;
 	buf.count = count;
 	buf.error = 0;
 	buf.ctx.actor = filldir64;

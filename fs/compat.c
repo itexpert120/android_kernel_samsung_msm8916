@@ -54,7 +54,7 @@
 #include <asm/ioctls.h>
 #include "internal.h"
 
-int compat_log = 1;
+int compat_log = 0;
 
 int compat_printk(const char *fmt, ...)
 {
@@ -488,7 +488,7 @@ compat_sys_io_setup(unsigned nr_reqs, u32 __user *ctx32p)
 
 	set_fs(KERNEL_DS);
 	/* The __user pointer cast is valid because of the set_fs() */
-	ret = sys_io_setup(nr_reqs, (aio_context_t __user *) &ctx64);
+	ret = sys_io_setup(nr_reqs, (aio_context_t __force_user *) &ctx64);
 	set_fs(oldfs);
 	/* truncating is ok because it's a user address */
 	if (!ret)
@@ -546,7 +546,7 @@ ssize_t compat_rw_copy_check_uvector(int type,
 		goto out;
 
 	ret = -EINVAL;
-	if (nr_segs > UIO_MAXIOV || nr_segs < 0)
+	if (nr_segs > UIO_MAXIOV)
 		goto out;
 	if (nr_segs > fast_segs) {
 		ret = -ENOMEM;
@@ -836,6 +836,7 @@ struct compat_old_linux_dirent {
 struct compat_readdir_callback {
 	struct dir_context ctx;
 	struct compat_old_linux_dirent __user *dirent;
+	struct file * file;
 	int result;
 };
 
@@ -853,6 +854,10 @@ static int compat_fillonedir(void *__buf, const char *name, int namlen,
 		buf->result = -EOVERFLOW;
 		return -EOVERFLOW;
 	}
+
+	if (!gr_acl_handle_filldir(buf->file, name, namlen, ino))
+		return 0;
+
 	buf->result++;
 	dirent = buf->dirent;
 	if (!access_ok(VERIFY_WRITE, dirent,
@@ -904,6 +909,7 @@ struct compat_getdents_callback {
 	struct dir_context ctx;
 	struct compat_linux_dirent __user *current_dir;
 	struct compat_linux_dirent __user *previous;
+	struct file * file;
 	int count;
 	int error;
 };
@@ -925,6 +931,10 @@ static int compat_filldir(void *__buf, const char *name, int namlen,
 		buf->error = -EOVERFLOW;
 		return -EOVERFLOW;
 	}
+
+	if (!gr_acl_handle_filldir(buf->file, name, namlen, ino))
+		return 0;
+
 	dirent = buf->previous;
 	if (dirent) {
 		if (__put_user(offset, &dirent->d_off))
@@ -992,6 +1002,7 @@ struct compat_getdents_callback64 {
 	struct dir_context ctx;
 	struct linux_dirent64 __user *current_dir;
 	struct linux_dirent64 __user *previous;
+	struct file * file;
 	int count;
 	int error;
 };
@@ -1008,6 +1019,10 @@ static int compat_filldir64(void * __buf, const char * name, int namlen, loff_t 
 	buf->error = -EINVAL;	/* only used if we fail.. */
 	if (reclen > buf->count)
 		return -EINVAL;
+
+	if (!gr_acl_handle_filldir(buf->file, name, namlen, ino))
+		return 0;
+
 	dirent = buf->previous;
 
 	if (dirent) {

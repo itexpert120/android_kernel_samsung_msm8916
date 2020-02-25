@@ -25,7 +25,8 @@ static int seq_show(struct seq_file *m, void *v)
 	if (!task)
 		return -ENOENT;
 
-	files = get_files_struct(task);
+	if (!gr_acl_handle_procpidmem(task))
+		files = get_files_struct(task);
 	put_task_struct(task);
 
 	if (files) {

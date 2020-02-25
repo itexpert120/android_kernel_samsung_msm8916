@@ -144,6 +144,20 @@ __do_kernel_fault(struct mm_struct *mm, unsigned long addr, unsigned int fsr,
 	if (fixup_exception(regs))
 		return;
 
+#ifdef CONFIG_PAX_KERNEXEC
+	if ((fsr & FSR_WRITE) &&
+	    (((unsigned long)_stext <= addr && addr < init_mm.end_code) ||
+	     (MODULES_VADDR <= addr && addr < MODULES_END)))
+	{
+		if (current->signal->curr_ip)
+			printk(KERN_ERR "PAX: From %pI4: %s:%d, uid/euid: %u/%u, attempted to modify kernel code\n", &current->signal->curr_ip, current->comm, task_pid_nr(current),
+					from_kuid_munged(&init_user_ns, current_uid()), from_kuid_munged(&init_user_ns, current_euid()));
+		else
+			printk(KERN_ERR "PAX: %s:%d, uid/euid: %u/%u, attempted to modify kernel code\n", current->comm, task_pid_nr(current),
+					from_kuid_munged(&init_user_ns, current_uid()), from_kuid_munged(&init_user_ns, current_euid()));
+	}
+#endif
+
 	/*
 	 * No handler, we'll have to terminate things with extreme prejudice.
 	 */
@@ -179,6 +193,13 @@ __do_user_fault(struct task_struct *tsk, unsigned long addr,
 		       tsk->comm, sig, addr, fsr);
 		show_pte(tsk->mm, addr);
 		show_regs(regs);
+	}
+#endif
+
+#ifdef CONFIG_PAX_PAGEEXEC
+	if (fsr & FSR_LNX_PF) {
+		pax_report_fault(regs, (void *)regs->ARM_pc, (void *)regs->ARM_sp);
+		do_group_exit(SIGKILL);
 	}
 #endif
 
@@ -405,6 +426,33 @@ do_page_fault(unsigned long addr, unsigned int fsr, struct pt_regs *regs)
 	return 0;
 }
 #endif					/* CONFIG_MMU */
+
+#ifdef CONFIG_PAX_PAGEEXEC
+void pax_report_insns(struct pt_regs *regs, void *pc, void *sp)
+{
+	long i;
+
+	printk(KERN_ERR "PAX: bytes at PC: ");
+	for (i = 0; i < 20; i++) {
+		unsigned char c;
+		if (get_user(c, (__force unsigned char __user *)pc+i))
+			printk(KERN_CONT "?? ");
+		else
+			printk(KERN_CONT "%02x ", c);
+	}
+	printk("\n");
+
+	printk(KERN_ERR "PAX: bytes at SP-4: ");
+	for (i = -1; i < 20; i++) {
+		unsigned long c;
+		if (get_user(c, (__force unsigned long __user *)sp+i))
+			printk(KERN_CONT "???????? ");
+		else
+			printk(KERN_CONT "%08lx ", c);
+	}
+	printk("\n");
+}
+#endif
 
 /*
  * First Level Translation Fault Handler

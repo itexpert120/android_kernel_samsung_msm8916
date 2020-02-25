@@ -156,7 +156,9 @@ SECTIONS
 
 	NOTES
 
-	_etext = .;			/* End of text and rodata section */
+#ifdef CONFIG_PAX_KERNEXEC
+	. = ALIGN(1<<SECTION_SHIFT);
+#endif
 
 #ifndef CONFIG_XIP_KERNEL
 #ifdef CONFIG_STRICT_MEMORY_RWX
@@ -242,6 +244,11 @@ SECTIONS
 	. = PAGE_OFFSET + TEXT_OFFSET;
 #else
 	__init_end = .;
+
+#ifdef CONFIG_PAX_KERNEXEC
+	. = ALIGN(1<<SECTION_SHIFT);
+#endif
+
 	. = ALIGN(THREAD_SIZE);
 	__data_loc = .;
 #endif

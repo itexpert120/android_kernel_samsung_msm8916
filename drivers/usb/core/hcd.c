@@ -1534,7 +1534,7 @@ int usb_hcd_submit_urb (struct urb *urb, gfp_t mem_flags)
 	 */
 	usb_get_urb(urb);
 	atomic_inc(&urb->use_count);
-	atomic_inc(&urb->dev->urbnum);
+	atomic_inc_unchecked(&urb->dev->urbnum);
 	usbmon_urb_submit(&hcd->self, urb);
 	if (hcd->driver->log_urb)
 		hcd->driver->log_urb(urb, "S", urb->status);
@@ -1565,7 +1565,7 @@ int usb_hcd_submit_urb (struct urb *urb, gfp_t mem_flags)
 		urb->hcpriv = NULL;
 		INIT_LIST_HEAD(&urb->urb_list);
 		atomic_dec(&urb->use_count);
-		atomic_dec(&urb->dev->urbnum);
+		atomic_dec_unchecked(&urb->dev->urbnum);
 		if (atomic_read(&urb->reject))
 			wake_up(&usb_kill_urb_queue);
 		usb_put_urb(urb);

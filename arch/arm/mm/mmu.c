@@ -39,6 +39,22 @@
 #include "mm.h"
 #include "tcm.h"
 
+#if defined(CONFIG_CPU_USE_DOMAINS) || defined(CONFIG_PAX_KERNEXEC) || defined(CONFIG_PAX_MEMORY_UDEREF)
+void modify_domain(unsigned int dom, unsigned int type)
+{
+	struct thread_info *thread = current_thread_info();
+	unsigned int domain = thread->cpu_domain;
+	/*
+	 * DOMAIN_MANAGER might be defined to some other value,
+	 * use the arch-defined constant
+	 */
+	domain &= ~domain_val(dom, 3);
+	thread->cpu_domain = domain | domain_val(dom, type);
+	set_domain(thread->cpu_domain);
+}
+EXPORT_SYMBOL(modify_domain);
+#endif
+
 /*
  * empty_zero_page is a special page that is used for
  * zero-initialized data and COW.
@@ -234,10 +250,18 @@ __setup("noalign", noalign_setup);
 
 #endif /* ifdef CONFIG_CPU_CP15 / else */
 
-#define PROT_PTE_DEVICE		L_PTE_PRESENT|L_PTE_YOUNG|L_PTE_DIRTY|L_PTE_XN
+#define PROT_PTE_DEVICE		L_PTE_PRESENT|L_PTE_YOUNG|L_PTE_DIRTY
 #define PROT_SECT_DEVICE	PMD_TYPE_SECT|PMD_SECT_AP_WRITE
 
-static struct mem_type mem_types[] = {
+#ifdef CONFIG_PAX_KERNEXEC
+#define L_PTE_KERNEXEC		L_PTE_RDONLY
+#define PMD_SECT_KERNEXEC	PMD_SECT_RDONLY
+#else
+#define L_PTE_KERNEXEC		L_PTE_DIRTY
+#define PMD_SECT_KERNEXEC	PMD_SECT_AP_WRITE
+#endif
+
+static struct mem_type mem_types[] __read_only = {
 	[MT_DEVICE] = {		  /* Strongly ordered / ARMv6 shared device */
 		.prot_pte	= PROT_PTE_DEVICE | L_PTE_MT_DEV_SHARED |
 				  L_PTE_SHARED,
@@ -266,16 +290,16 @@ static struct mem_type mem_types[] = {
 	[MT_UNCACHED] = {
 		.prot_pte	= PROT_PTE_DEVICE,
 		.prot_l1	= PMD_TYPE_TABLE,
-		.prot_sect	= PMD_TYPE_SECT | PMD_SECT_XN,
+		.prot_sect	= PROT_SECT_DEVICE,
 		.domain		= DOMAIN_IO,
 	},
 	[MT_CACHECLEAN] = {
-		.prot_sect = PMD_TYPE_SECT | PMD_SECT_XN,
+		.prot_sect = PMD_TYPE_SECT | PMD_SECT_RDONLY,
 		.domain    = DOMAIN_KERNEL,
 	},
 #ifndef CONFIG_ARM_LPAE
 	[MT_MINICLEAN] = {
-		.prot_sect = PMD_TYPE_SECT | PMD_SECT_XN | PMD_SECT_MINICACHE,
+		.prot_sect = PMD_TYPE_SECT | PMD_SECT_MINICACHE | PMD_SECT_RDONLY,
 		.domain    = DOMAIN_KERNEL,
 	},
 #endif
@@ -349,10 +373,10 @@ static struct mem_type mem_types[] = {
 	},
 	[MT_MEMORY_SO] = {
 		.prot_pte  = L_PTE_PRESENT | L_PTE_YOUNG | L_PTE_DIRTY |
-				L_PTE_MT_UNCACHED | L_PTE_XN,
+				L_PTE_MT_UNCACHED,
 		.prot_l1   = PMD_TYPE_TABLE,
 		.prot_sect = PMD_TYPE_SECT | PMD_SECT_AP_WRITE | PMD_SECT_S |
-				PMD_SECT_UNCACHED | PMD_SECT_XN,
+				PMD_SECT_UNCACHED,
 		.domain    = DOMAIN_KERNEL,
 	},
 	[MT_MEMORY_DMA_READY] = {
@@ -490,9 +514,35 @@ static void __init build_mem_type_table(void)
 			 * to prevent speculative instruction fetches.
 			 */
 			mem_types[MT_DEVICE].prot_sect |= PMD_SECT_XN;
+			mem_types[MT_DEVICE].prot_pte |= L_PTE_XN;
 			mem_types[MT_DEVICE_NONSHARED].prot_sect |= PMD_SECT_XN;
+			mem_types[MT_DEVICE_NONSHARED].prot_pte |= L_PTE_XN;
 			mem_types[MT_DEVICE_CACHED].prot_sect |= PMD_SECT_XN;
+			mem_types[MT_DEVICE_CACHED].prot_pte |= L_PTE_XN;
 			mem_types[MT_DEVICE_WC].prot_sect |= PMD_SECT_XN;
+			mem_types[MT_DEVICE_WC].prot_pte |= L_PTE_XN;
+
+			/* Mark other regions on ARMv6+ as execute-never */
+
+#ifdef CONFIG_PAX_KERNEXEC
+			mem_types[MT_UNCACHED].prot_sect |= PMD_SECT_XN;
+			mem_types[MT_UNCACHED].prot_pte |= L_PTE_XN;
+			mem_types[MT_CACHECLEAN].prot_sect |= PMD_SECT_XN;
+			mem_types[MT_CACHECLEAN].prot_pte |= L_PTE_XN;
+#ifndef CONFIG_ARM_LPAE
+			mem_types[MT_MINICLEAN].prot_sect |= PMD_SECT_XN;
+			mem_types[MT_MINICLEAN].prot_pte |= L_PTE_XN;
+#endif
+			mem_types[MT_MEMORY_RW].prot_sect |= PMD_SECT_XN;
+			mem_types[MT_MEMORY_RW].prot_pte |= L_PTE_XN;
+			mem_types[MT_MEMORY_NONCACHED_RW].prot_sect |= PMD_SECT_XN;
+			mem_types[MT_MEMORY_NONCACHED_RW].prot_pte |= PMD_SECT_XN;
+			mem_types[MT_MEMORY_DTCM].prot_sect |= PMD_SECT_XN;
+			mem_types[MT_MEMORY_DTCM].prot_pte |= L_PTE_XN;
+#endif
+
+			mem_types[MT_MEMORY_SO].prot_sect |= PMD_SECT_XN;
+			mem_types[MT_MEMORY_SO].prot_pte |= L_PTE_XN;
 		}
 		if (cpu_arch >= CPU_ARCH_ARMv7 && (cr & CR_TRE)) {
 			/*
@@ -600,15 +650,20 @@ static void __init build_mem_type_table(void)
 	if (cpu_arch >= CPU_ARCH_ARMv6) {
 		if (cpu_arch >= CPU_ARCH_ARMv7 && (cr & CR_TRE)) {
 			/* Non-cacheable Normal is XCB = 001 */
-			mem_types[MT_MEMORY_NONCACHED].prot_sect |=
+			mem_types[MT_MEMORY_NONCACHED_RW].prot_sect |=
+				PMD_SECT_BUFFERED;
+			mem_types[MT_MEMORY_NONCACHED_RX].prot_sect |=
 				PMD_SECT_BUFFERED;
 		} else {
 			/* For both ARMv6 and non-TEX-remapping ARMv7 */
-			mem_types[MT_MEMORY_NONCACHED].prot_sect |=
+			mem_types[MT_MEMORY_NONCACHED_RW].prot_sect |=
+				PMD_SECT_TEX(1);
+			mem_types[MT_MEMORY_NONCACHED_RX].prot_sect |=
 				PMD_SECT_TEX(1);
 		}
 	} else {
-		mem_types[MT_MEMORY_NONCACHED].prot_sect |= PMD_SECT_BUFFERABLE;
+		mem_types[MT_MEMORY_NONCACHED_RW].prot_sect |= PMD_SECT_BUFFERABLE;
+		mem_types[MT_MEMORY_NONCACHED_RX].prot_sect |= PMD_SECT_BUFFERABLE;
 	}
 
 #ifdef CONFIG_ARM_LPAE
@@ -623,6 +678,8 @@ static void __init build_mem_type_table(void)
 	kern_pgprot |= PTE_EXT_AF;
 	vecs_pgprot |= PTE_EXT_AF;
 #endif
+
+	user_pgprot |= __supported_pte_mask;
 
 	for (i = 0; i < 16; i++) {
 		pteval_t v = pgprot_val(protection_map[i]);
@@ -1308,7 +1365,7 @@ static void __init devicemaps_init(const struct machine_desc *mdesc)
 	 * location (0xffff0000).  If we aren't using high-vectors, also
 	 * create a mapping at the low-vectors virtual address.
 	 */
-	map.pfn = __phys_to_pfn(virt_to_phys(vectors));
+	map.pfn = __phys_to_pfn(virt_to_phys(&vectors));
 	map.virtual = 0xffff0000;
 	map.length = PAGE_SIZE;
 #ifdef CONFIG_KUSER_HELPERS

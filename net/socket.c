@@ -108,6 +108,8 @@
 
 static BLOCKING_NOTIFIER_HEAD(sockev_notifier_list);
 
+#include <linux/grsock.h>
+
 static int sock_no_open(struct inode *irrelevant, struct file *dontcare);
 static ssize_t sock_aio_read(struct kiocb *iocb, const struct iovec *iov,
 			 unsigned long nr_segs, loff_t pos);
@@ -333,7 +335,7 @@ static struct dentry *sockfs_mount(struct file_system_type *fs_type,
 		&sockfs_dentry_operations, SOCKFS_MAGIC);
 }
 
-static struct vfsmount *sock_mnt __read_mostly;
+struct vfsmount *sock_mnt __read_mostly;
 
 static struct file_system_type sock_fs_type = {
 	.name =		"sockfs",
@@ -1272,6 +1274,8 @@ int __sock_create(struct net *net, int family, int type, int protocol,
 		return -EAFNOSUPPORT;
 	if (type < 0 || type >= SOCK_MAX)
 		return -EINVAL;
+	if (protocol < 0)
+		return -EINVAL;
 
 	/* Compatibility.
 
@@ -1402,6 +1406,16 @@ SYSCALL_DEFINE3(socket, int, family, int, type, int, protocol)
 
 	if (SOCK_NONBLOCK != O_NONBLOCK && (flags & SOCK_NONBLOCK))
 		flags = (flags & ~SOCK_NONBLOCK) | O_NONBLOCK;
+
+	if(!gr_search_socket(family, type, protocol)) {
+		retval = -EACCES;
+		goto out;
+	}
+
+	if (gr_handle_sock_all(family, type, protocol)) {
+		retval = -EACCES;
+		goto out;
+	}
 
 	retval = sock_create(family, type, protocol, &sock);
 	if (retval < 0)
@@ -1546,6 +1560,14 @@ SYSCALL_DEFINE3(bind, int, fd, struct sockaddr __user *, umyaddr, int, addrlen)
 	if (sock) {
 		err = move_addr_to_kernel(umyaddr, addrlen, &address);
 		if (err >= 0) {
+			if (gr_handle_sock_server((struct sockaddr *)&address)) {
+				err = -EACCES;
+				goto error;
+			}
+			err = gr_search_bind(sock, (struct sockaddr_in *)&address);
+			if (err)
+				goto error;
+
 			err = security_socket_bind(sock,
 						   (struct sockaddr *)&address,
 						   addrlen);
@@ -1561,6 +1583,7 @@ SYSCALL_DEFINE3(bind, int, fd, struct sockaddr __user *, umyaddr, int, addrlen)
 			if (sock->sk)
 				sock_put(sock->sk);
 		}
+error:
 		fput_light(sock->file, fput_needed);
 	}
 	return err;
@@ -1637,6 +1660,18 @@ SYSCALL_DEFINE4(accept4, int, fd, struct sockaddr __user *, upeer_sockaddr,
 
 	newsock->type = sock->type;
 	newsock->ops = sock->ops;
+
+	if (gr_handle_sock_server_other(sock->sk)) {
+		err = -EPERM;
+		sock_release(newsock);
+		goto out_put;
+	}
+
+	err = gr_search_accept(sock);
+	if (err) {
+		sock_release(newsock);
+		goto out_put;
+	}
 
 	/*
 	 * We don't need try_module_get here, as the listening socket (sock)
@@ -1766,6 +1801,8 @@ SYSCALL_DEFINE3(getsockname, int, fd, struct sockaddr __user *, usockaddr,
 		goto out_put;
 	err = move_addr_to_user(&address, len, usockaddr, usockaddr_len);
 
+	gr_attach_curr_ip(newsock->sk);
+
 out_put:
 	fput_light(sock->file, fput_needed);
 out:
@@ -1814,6 +1851,7 @@ SYSCALL_DEFINE6(sendto, int, fd, void __user *, buff, size_t, len,
 		int, addr_len)
 {
 	struct socket *sock;
+	struct sockaddr *sck;
 	struct sockaddr_storage address;
 	int err;
 	struct msghdr msg;
@@ -1879,7 +1917,7 @@ SYSCALL_DEFINE6(recvfrom, int, fd, void __user *, ubuf, size_t, size,
 	struct socket *sock;
 	struct iovec iov;
 	struct msghdr msg;
-	struct sockaddr_storage address;
+	struct sockaddr_storage address = { };
 	int err, err2;
 	int fput_needed;
 
@@ -2113,7 +2151,7 @@ static int ___sys_sendmsg(struct socket *sock, struct msghdr __user *msg,
 		 * checking falls down on this.
 		 */
 		if (copy_from_user(ctl_buf,
-				   (void __user __force *)msg_sys->msg_control,
+				   (void __force_user *)msg_sys->msg_control,
 				   ctl_len))
 			goto out_freectl;
 		msg_sys->msg_control = ctl_buf;
@@ -2264,7 +2302,7 @@ static int ___sys_recvmsg(struct socket *sock, struct msghdr __user *msg,
 	int err, total_len, len;
 
 	/* kernel mode address */
-	struct sockaddr_storage addr;
+	struct sockaddr_storage addr = { };
 
 	/* user mode address pointers */
 	struct sockaddr __user *uaddr;
@@ -3050,7 +3088,7 @@ static int bond_ioctl(struct net *net, unsigned int cmd,
 		old_fs = get_fs();
 		set_fs(KERNEL_DS);
 		err = dev_ioctl(net, cmd,
-				(struct ifreq __user __force *) &kifr);
+				(struct ifreq __force_user *) &kifr);
 		set_fs(old_fs);
 
 		return err;
@@ -3159,7 +3197,7 @@ static int compat_sioc_ifmap(struct net *net, unsigned int cmd,
 
 	old_fs = get_fs();
 	set_fs(KERNEL_DS);
-	err = dev_ioctl(net, cmd, (void  __user __force *)&ifr);
+	err = dev_ioctl(net, cmd, (void  __force_user *)&ifr);
 	set_fs(old_fs);
 
 	if (cmd == SIOCGIFMAP && !err) {
@@ -3264,7 +3302,7 @@ static int routing_ioctl(struct net *net, struct socket *sock,
 		ret |= __get_user(rtdev, &(ur4->rt_dev));
 		if (rtdev) {
 			ret |= copy_from_user(devname, compat_ptr(rtdev), 15);
-			r4.rt_dev = (char __user __force *)devname;
+			r4.rt_dev = (char __force_user *)devname;
 			devname[15] = 0;
 		} else
 			r4.rt_dev = NULL;
@@ -3490,8 +3528,8 @@ int kernel_getsockopt(struct socket *sock, int level, int optname,
 	int __user *uoptlen;
 	int err;
 
-	uoptval = (char __user __force *) optval;
-	uoptlen = (int __user __force *) optlen;
+	uoptval = (char __force_user *) optval;
+	uoptlen = (int __force_user *) optlen;
 
 	set_fs(KERNEL_DS);
 	if (level == SOL_SOCKET)
@@ -3511,7 +3549,7 @@ int kernel_setsockopt(struct socket *sock, int level, int optname,
 	char __user *uoptval;
 	int err;
 
-	uoptval = (char __user __force *) optval;
+	uoptval = (char __force_user *) optval;
 
 	set_fs(KERNEL_DS);
 	if (level == SOL_SOCKET)

@@ -23,6 +23,7 @@ void __kprobes __patch_text(void *addr, unsigned int insn)
 	mem_text_writeable_spinlock(&flags);
 	mem_text_address_writeable((unsigned long)addr);
 
+	pax_open_kernel();
 	if (thumb2 && __opcode_is_thumb16(insn)) {
 		*(u16 *)addr = __opcode_to_mem_thumb16(insn);
 		size = sizeof(u16);
@@ -44,6 +45,7 @@ void __kprobes __patch_text(void *addr, unsigned int insn)
 		*(u32 *)addr = insn;
 		size = sizeof(u32);
 	}
+	pax_close_kernel();
 
 	flush_icache_range((uintptr_t)(addr),
 			   (uintptr_t)(addr) + size);

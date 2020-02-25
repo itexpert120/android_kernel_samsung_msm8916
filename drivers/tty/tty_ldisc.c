@@ -121,7 +121,7 @@ static struct tty_ldisc_ops *get_ldops(int disc)
 	if (ldops) {
 		ret = ERR_PTR(-EAGAIN);
 		if (try_module_get(ldops->owner)) {
-			ldops->refcount++;
+			atomic_inc(&ldops->refcount);
 			ret = ldops;
 		}
 	}

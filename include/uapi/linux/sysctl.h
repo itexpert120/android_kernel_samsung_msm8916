@@ -156,7 +156,11 @@ enum
 	KERN_COLD_BOOT = 78, /* int: identify if system cold booted */
 };
 
-
+#ifdef CONFIG_PAX_SOFTMODE
+enum {
+	PAX_SOFTMODE=1		/* PaX: disable/enable soft mode */
+};
+#endif
 
 /* CTL_VM names: */
 enum
