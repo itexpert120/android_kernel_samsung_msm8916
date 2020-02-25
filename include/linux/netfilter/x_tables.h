@@ -432,7 +432,7 @@ extern void xt_compat_init_offsets(u_int8_t af, unsigned int number);
 extern int xt_compat_calc_jump(u_int8_t af, unsigned int offset);
 
 extern int xt_compat_match_offset(const struct xt_match *match);
-extern void xt_compat_match_from_user(struct xt_entry_match *m,
+extern int xt_compat_match_from_user(struct xt_entry_match *m,
 				     void **dstptr, unsigned int *size);
 extern int xt_compat_match_to_user(const struct xt_entry_match *m,
 				   void __user **dstptr, unsigned int *size);
@@ -442,9 +442,6 @@ extern void xt_compat_target_from_user(struct xt_entry_target *t,
 				       void **dstptr, unsigned int *size);
 extern int xt_compat_target_to_user(const struct xt_entry_target *t,
 				    void __user **dstptr, unsigned int *size);
-int xt_compat_check_entry_offsets(const void *base, const char *elems,
-                                  unsigned int target_offset,
-                                  unsigned int next_offset);
 
 #endif /* CONFIG_COMPAT */
 #endif /* _X_TABLES_H */

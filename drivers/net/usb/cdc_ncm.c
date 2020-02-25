@@ -464,11 +464,7 @@ advance:
 
 	iface_no = ctx->data->cur_altsetting->desc.bInterfaceNumber;
 
-	/* Reset data interface. Some devices will not reset properly
-	 * unless they are configured first.  Toggle the altsetting to
-	 * force a reset
-	 */
-	usb_set_interface(dev->udev, iface_no, data_altsetting);
+	/* reset data interface */
 	temp = usb_set_interface(dev->udev, iface_no, 0);
 	if (temp)
 		goto error2;
@@ -476,13 +472,6 @@ advance:
 	/* initialize data interface */
 	if (cdc_ncm_setup(ctx))
 		goto error2;
-
-	/* Some firmwares need a pause here or they will silently fail
-	 * to set up the interface properly.  This value was decided
-	 * empirically on a Sierra Wireless MC7455 running 02.08.02.00
-	 * firmware.
-	 */
-	usleep_range(10000, 20000);
 
 	/* configure data interface */
 	temp = usb_set_interface(dev->udev, iface_no, data_altsetting);
@@ -1171,7 +1160,7 @@ static const struct driver_info cdc_ncm_info = {
 static const struct driver_info wwan_info = {
 	.description = "Mobile Broadband Network Device",
 	.flags = FLAG_POINTTOPOINT | FLAG_NO_SETINT | FLAG_MULTI_PACKET
-			| FLAG_LINK_INTR | FLAG_WWAN,
+			| FLAG_WWAN,
 	.bind = cdc_ncm_bind,
 	.unbind = cdc_ncm_unbind,
 	.check_connect = cdc_ncm_check_connect,
@@ -1185,7 +1174,7 @@ static const struct driver_info wwan_info = {
 static const struct driver_info wwan_noarp_info = {
 	.description = "Mobile Broadband Network Device (NO ARP)",
 	.flags = FLAG_POINTTOPOINT | FLAG_NO_SETINT | FLAG_MULTI_PACKET
-			| FLAG_LINK_INTR | FLAG_WWAN | FLAG_NOARP,
+			| FLAG_WWAN | FLAG_NOARP,
 	.bind = cdc_ncm_bind,
 	.unbind = cdc_ncm_unbind,
 	.check_connect = cdc_ncm_check_connect,

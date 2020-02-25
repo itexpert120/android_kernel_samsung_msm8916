@@ -292,7 +292,7 @@ static int mei_nfc_if_version(struct mei_nfc_dev *ndev)
 		return -ENOMEM;
 
 	bytes_recv = __mei_cl_recv(cl, (u8 *)reply, if_version_length);
-	if (bytes_recv < if_version_length) {
+	if (bytes_recv < 0 || bytes_recv < sizeof(struct mei_nfc_reply)) {
 		dev_err(&dev->pdev->dev, "Could not read IF version\n");
 		ret = -EIO;
 		goto err;
@@ -342,10 +342,9 @@ static int mei_nfc_send(struct mei_cl_device *cldev, u8 *buf, size_t length)
 	ndev = (struct mei_nfc_dev *) cldev->priv_data;
 	dev = ndev->cl->dev;
 
-	err = -ENOMEM;
 	mei_buf = kzalloc(length + MEI_NFC_HEADER_SIZE, GFP_KERNEL);
 	if (!mei_buf)
-		goto out;
+		return -ENOMEM;
 
 	hdr = (struct mei_nfc_hci_hdr *) mei_buf;
 	hdr->cmd = MEI_NFC_CMD_HCI_SEND;
@@ -355,9 +354,12 @@ static int mei_nfc_send(struct mei_cl_device *cldev, u8 *buf, size_t length)
 	hdr->data_size = length;
 
 	memcpy(mei_buf + MEI_NFC_HEADER_SIZE, buf, length);
+
 	err = __mei_cl_send(ndev->cl, mei_buf, length + MEI_NFC_HEADER_SIZE);
 	if (err < 0)
-		goto out;
+		return err;
+
+	kfree(mei_buf);
 
 	if (!wait_event_interruptible_timeout(ndev->send_wq,
 				ndev->recv_req_id == ndev->req_id, HZ)) {
@@ -366,8 +368,7 @@ static int mei_nfc_send(struct mei_cl_device *cldev, u8 *buf, size_t length)
 	} else {
 		ndev->req_id++;
 	}
-out:
-	kfree(mei_buf);
+
 	return err;
 }
 

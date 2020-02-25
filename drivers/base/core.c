@@ -765,12 +765,12 @@ class_dir_create_and_add(struct class *class, struct kobject *parent_kobj)
 	return &dir->kobj;
 }
 
-static DEFINE_MUTEX(gdp_mutex);
 
 static struct kobject *get_device_parent(struct device *dev,
 					 struct device *parent)
 {
 	if (dev->class) {
+		static DEFINE_MUTEX(gdp_mutex);
 		struct kobject *kobj = NULL;
 		struct kobject *parent_kobj;
 		struct kobject *k;
@@ -1065,10 +1065,8 @@ int device_add(struct device *dev)
 	/* first, register with generic layer. */
 	/* we require the name to be set before, and pass NULL */
 	error = kobject_add(&dev->kobj, dev->kobj.parent, NULL);
-	if (error) {
-		glue_dir = get_glue_dir(dev);
+	if (error)
 		goto Error;
-	}
 
 	/* notify platform of device entry */
 	if (platform_notify)
@@ -1157,11 +1155,11 @@ done:
 	device_remove_file(dev, &uevent_attr);
  attrError:
 	kobject_uevent(&dev->kobj, KOBJ_REMOVE);
-	glue_dir = get_glue_dir(dev);
 	kobject_del(&dev->kobj);
  Error:
-	cleanup_glue_dir(dev, glue_dir);
-	put_device(parent);
+	cleanup_device_parent(dev);
+	if (parent)
+		put_device(parent);
 name_error:
 	kfree(dev->p);
 	dev->p = NULL;
@@ -1232,7 +1230,6 @@ void put_device(struct device *dev)
 void device_del(struct device *dev)
 {
 	struct device *parent = dev->parent;
-	struct kobject *glue_dir = NULL;
 	struct class_interface *class_intf;
 
 	/* Notify clients of device removal.  This call must come
@@ -1274,9 +1271,8 @@ void device_del(struct device *dev)
 	if (platform_notify_remove)
 		platform_notify_remove(dev);
 	kobject_uevent(&dev->kobj, KOBJ_REMOVE);
-	glue_dir = get_glue_dir(dev);
+	cleanup_device_parent(dev);
 	kobject_del(&dev->kobj);
-	cleanup_glue_dir(dev, glue_dir);
 	put_device(parent);
 }
 

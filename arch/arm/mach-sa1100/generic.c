@@ -31,7 +31,6 @@
 
 #include <mach/hardware.h>
 #include <mach/irqs.h>
-#include <mach/reset.h>
 
 #include "generic.h"
 
