@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -27,23 +27,6 @@
 	chosen {
 		bootargs = "sched_enable_hmp=1";
 	};
-
-        firmware: firmware {
-                 android {
-                         compatible = "android,firmware";
-                         fstab {
-                                 compatible = "android,fstab";
-                                 system {
-                                         compatible = "android,system";
-                                         dev = "/dev/block/platform/soc.0/7824900.sdhci/by-name/system";
-                                         type = "ext4";
-                                         mnt_flags = "ro,barrier=1,discard";
-                                         fsmgr_flags = "wait";
-                                         status = "ok";
-                                 };
-                         };
-                 };
-        };
 
 	aliases {
 		sdhc1 = &sdhc_1; /* SDC1 eMMC slot */
@@ -131,7 +114,6 @@
 #include "msm8916-iommu-domains.dtsi"
 #include "msm8916-bus.dtsi"
 #include "msm8916-camera.dtsi"
-#include "msm8916-drm.dtsi"
 
 &soc {
 	#address-cells = <1>;
@@ -142,7 +124,6 @@
 	l2ccc_0: clock-controller@b011000 {
 		compatible = "qcom,8916-l2ccc";
 		reg = <0x0b011000 0x1000>;
-		reg-names = "l2-base";
 	};
 
 	acc0:clock-controller@b088000 {
@@ -248,7 +229,6 @@
 		compatible = "qcom,pshold";
 		reg = <0x4ab000 0x4>,
 		      <0x193d100 0x4>;
-		reg-names = "pshold-base", "tcsr-boot-misc-detect";
 	};
 
 	qcom,mpm2-sleep-counter@4a3000 {
@@ -379,10 +359,8 @@
 
 	clock_cpu: qcom,clock-a7@0b011050 {
 		compatible = "qcom,clock-a53-8916";
-		reg = <0x0b011050 0x8>,
-		      <0x0005c004 0x8>,
-		      <0x0005c00c 0x8>;
-		reg-names = "rcg-base", "efuse1", "efuse";
+		reg = <0x0b011050 0x8>;
+		reg-names = "rcg-base";
 		qcom,safe-freq = < 400000000 >;
 		cpu-vdd-supply = <&apc_vreg_corner>;
 		clocks = <&clock_gcc clk_gpll0_ao_clk_src>,
@@ -397,8 +375,7 @@
 			<  800000000 4>,
 			<  998400000 5>,
 			< 1094400000 6>,
-			< 1152000000 7>,
-			< 1209600000 8>;
+			< 1190400000 7>;
 	};
 
 	cpubw: qcom,cpubw@0 {
@@ -425,14 +402,11 @@
 		cpubw-cpufreq {
 			target-dev = <&cpubw>;
 			cpu-to-dev-map =
-				 <  200000  762>,
 				 <  400000  762>,
-				 <  533330  1525>,
 				 <  800000  1525>,
 				 <  998400  3051>,
 				 < 1094400  3051>,
-				 < 1152000  4066>,
-				 < 1209600  4066>;
+				 < 1190400  4066>;
 		};
 	};
 
@@ -452,8 +426,7 @@
 			 <  800000 >,
 			 <  998400 >,
 			 < 1094400 >,
-			 < 1152000 >,
-			 < 1209600 >;
+			 < 1190400 >;
 	};
 
 	qcom,sps {
@@ -785,8 +758,6 @@
 		qcom,use-sw-aes-xts-algo;
 		qcom,use-sw-aes-ccm-algo;
 		qcom,use-sw-ahash-algo;
-		qcom,use-sw-hmac-algo;
-		qcom,use-sw-aead-algo;
 		status = "disabled";
 	};
 
@@ -872,7 +843,6 @@
 			qcom,smd-irq-bitmask = <0x1000>;
 			interrupts = <0 25 1>;
 			label = "modem";
-			qcom,not-loadable;
 		};
 
 		qcom,smsm-modem {
@@ -1414,7 +1384,7 @@
 		interrupts = <0 145 0 0 146 0>;
 		interrupt-names = "wcnss_wlantx_irq", "wcnss_wlanrx_irq";
 
-		qcom,pronto-vddmx-supply = <&pm8916_l3_corner_ao>;
+		qcom,pronto-vddmx-supply = <&pm8916_l3>;
 		qcom,pronto-vddcx-supply = <&pm8916_s1_corner>;
 		qcom,pronto-vddpx-supply = <&pm8916_l7>;
 		qcom,iris-vddxo-supply   = <&pm8916_l7>;
@@ -1493,22 +1463,15 @@
 		};
         };
 */
-	dma_blsp1: qcom,sps-dma@7884000 { /* BLSP1 */
-		#dma-cells = <4>;
-		compatible = "qcom,sps-dma";
-		reg = <0x7884000 0x23000>;
-		interrupts = <0 238 0>;
-		qcom,summing-threshold = <10>;
-	};
-
 	i2c_0: i2c@78b6000 { /* BLSP1 QUP2 */
 		compatible = "qcom,i2c-msm-v2";
 		#address-cells = <1>;
 		#size-cells = <0>;
-		reg-names = "qup_phys_addr";
-		reg = <0x78b6000 0x600>;
-		interrupt-names = "qup_irq";
-		interrupts = <0 96 0>;
+		reg-names = "qup_phys_addr", "bam_phys_addr";
+		reg = <0x78b6000 0x600>,
+		      <0x7884000 0x23000>;
+		interrupt-names = "qup_irq", "bam_irq";
+		interrupts = <0 96 0>, <0 238 0>;
 		clocks = <&clock_gcc clk_gcc_blsp1_ahb_clk>,
 			 <&clock_gcc clk_gcc_blsp1_qup2_i2c_apps_clk>;
 		clock-names = "iface_clk", "core_clk";
@@ -1519,9 +1482,8 @@
 		pinctrl-1 = <&i2c_0_sleep>;
 		qcom,noise-rjct-scl = <0>;
 		qcom,noise-rjct-sda = <0>;
-		dmas = <&dma_blsp1 6 64 0x20000020 0x20>,
-			<&dma_blsp1 7 32 0x20000020 0x20>;
-		dma-names = "tx", "rx";
+		qcom,bam-pipe-idx-cons = <6>;
+		qcom,bam-pipe-idx-prod = <7>;
 		qcom,master-id = <86>;
 	};
 
@@ -1529,10 +1491,11 @@
 		compatible = "qcom,i2c-msm-v2";
 		#address-cells = <1>;
 		#size-cells = <0>;
-		reg-names = "qup_phys_addr";
-		reg = <0x78b5000 0x600>;
-		interrupt-names = "qup_irq";
-		interrupts = <0 95 0>;
+		reg-names = "qup_phys_addr", "bam_phys_addr";
+		reg = <0x78b5000 0x600>,
+		      <0x7884000 0x23000>;
+		interrupt-names = "qup_irq", "bam_irq";
+		interrupts = <0 95 0>, <0 238 0>;
 		qcom,clk-freq-out = <100000>;
 		qcom,clk-freq-in  = <19200000>;
 		clock-names = "iface_clk", "core_clk";
@@ -1543,9 +1506,8 @@
 		pinctrl-1 = <&i2c_1_sleep>;
 		qcom,noise-rjct-scl = <0>;
 		qcom,noise-rjct-sda = <0>;
-		dmas = <&dma_blsp1 4 64 0x20000020 0x20>,
-			<&dma_blsp1 5 32 0x20000020 0x20>;
-		dma-names = "tx", "rx";
+		qcom,bam-pipe-idx-cons = <4>;
+		qcom,bam-pipe-idx-prod = <5>;
 		qcom,master-id = <86>;
 	};
 
@@ -1553,10 +1515,11 @@
 		compatible = "qcom,i2c-msm-v2";
 		#address-cells = <1>;
 		#size-cells = <0>;
-		reg-names = "qup_phys_addr";
-		reg = <0x78b9000 0x600>;
-		interrupt-names = "qup_irq";
-		interrupts = <0 99 0>;
+		reg-names = "qup_phys_addr", "bam_phys_addr";
+		reg = <0x78b9000 0x600>,
+		      <0x7884000 0x23000>;
+		interrupt-names = "qup_irq", "bam_irq";
+		interrupts = <0 99 0>, <0 238 0>;
 		clocks = <&clock_gcc clk_gcc_blsp1_ahb_clk>,
 			 <&clock_gcc clk_gcc_blsp1_qup5_i2c_apps_clk>;
 		clock-names = "iface_clk", "core_clk";
@@ -1567,9 +1530,8 @@
 		pinctrl-1 = <&i2c_5_sleep>;
 		qcom,noise-rjct-scl = <0>;
 		qcom,noise-rjct-sda = <0>;
-		dmas = <&dma_blsp1 12 64 0x20000020 0x20>,
-			<&dma_blsp1 13 32 0x20000020 0x20>;
-		dma-names = "tx", "rx";
+		qcom,bam-pipe-idx-cons = <12>;
+		qcom,bam-pipe-idx-prod = <13>;
 		qcom,master-id = <86>;
 	};
 
@@ -1578,10 +1540,11 @@
 		#address-cells=<1>;
 		#size-cells=<0>;
 		cell-index = <6>;
-		reg-names = "qup_phys_addr";
-		reg = <0x78ba000 0x1000>;
-		interrupt-names = "qup_irq";
-		interrupts = <0 100 0>;
+		reg-names = "qup_phys_addr", "bam_phys_addr";
+		reg = <0x78ba000 0x1000>,
+		      <0x7884000 0x23000>;
+		interrupt-names = "qup_irq", "bam_irq";
+		interrupts = <0 100 0>, <0 238 0>;
 		clocks = <&clock_gcc clk_gcc_blsp1_ahb_clk>,
 			 <&clock_gcc clk_gcc_blsp1_qup6_i2c_apps_clk>;
 		clock-names = "iface_clk", "core_clk";
@@ -1592,9 +1555,8 @@
 		pinctrl-1 = <&i2c_6_sleep>;
 		qcom,noise-rjct-scl = <0>;
 		qcom,noise-rjct-sda = <0>;
-		dmas = <&dma_blsp1 14 64 0x20000020 0x20>,
-			<&dma_blsp1 15 32 0x20000020 0x20>;
-		dma-names = "tx", "rx";
+		qcom,bam-pipe-idx-cons = <14>;
+		qcom,bam-pipe-idx-prod = <15>;
 		qcom,master-id = <86>;
 	};
 
@@ -1602,10 +1564,11 @@
 		compatible = "qcom,i2c-msm-v2";
 		#address-cells = <1>;
 		#size-cells = <0>;
-		reg-names = "qup_phys_addr";
-		reg = <0x78b8000 0x1000>;
-		interrupt-names = "qup_irq";
-		interrupts = <0 98 0>;
+		reg-names = "qup_phys_addr", "bam_phys_addr";
+		reg = <0x78b8000 0x1000>,
+			<0x7884000 0x23f00>;
+		interrupt-names = "qup_irq", "bam_irq";
+		interrupts = <0 98 0>, <0 238 0>;
 		qcom,clk-freq-out = <400000>;
 		qcom,clk-freq-in  = <19200000>;
 		clock-names = "iface_clk", "core_clk";
@@ -1617,9 +1580,8 @@
 		pinctrl-1 = <&i2c_4_sleep>;
 		qcom,noise-rjct-scl = <0>;
 		qcom,noise-rjct-sda = <0>;
-		dmas = <&dma_blsp1 10 64 0x20000020 0x20>,
-			<&dma_blsp1 11 32 0x20000020 0x20>;
-		dma-names = "tx", "rx";
+		qcom,bam-pipe-idx-cons = <10>;
+		qcom,bam-pipe-idx-prod = <11>;
 		qcom,master-id = <86>;
 	};
 
@@ -1787,11 +1749,6 @@
 		/* GPIO output to mss */
 		qcom,gpio-force-stop = <&smp2pgpio_ssr_smp2p_1_out 0 0>;
 		linux,contiguous-region = <&modem_adsp_mem>;
-
-		mba_mss: qcom,mba-mem@0 {
-			compatible = "qcom,pil-mba-mem";
-			linux,contiguous-region = <&mba_mem>;
-		};
 	};
 
 	qcom,vidc@1d00000 {
@@ -1816,12 +1773,6 @@
 		qcom,reg-presets = <0xE0020 0x05555556>,
 			<0xE0024 0x05555556>,
 			<0x80124 0x00000003>;
-		qcom,qdss-presets = <0x826000 0x1000>,
-			<0x827000 0x1000>,
-			<0x822000 0x1000>,
-			<0x803000 0x1000>,
-			<0x9180000 0x1000>,
-			<0x9181000 0x1000>;
 		qcom,buffer-type-tz-usage-table = <0x241 0x1>,
 			<0x106 0x2>,
 			<0x480 0x3>;

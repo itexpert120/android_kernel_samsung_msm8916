@@ -399,16 +399,6 @@
 		};
 	};
 
-	hall {
-		status = "okay";
-		compatible = "hall";
-		interrupt-parent = <&msm_gpio>;
-		interrupts = <52 0>;
-		hall,gpio_flip_cover = <&msm_gpio 52 0>;
-		pinctrl-names = "pmx_hall_ic_pin";
-		pinctrl-0 = <&hall_ic_pin>;
-	};
-	
 	i2c_1: i2c@78b5000 { /* BLSP1 QUP1 */
 		status = "ok";
 		qcom,clk-freq-out = <400000>;
