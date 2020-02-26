@@ -299,7 +299,11 @@ static int __bprm_mm_init(struct linux_binprm *bprm)
 	up_write(&mm->mmap_sem);
 	bprm->p = vma->vm_end - sizeof(void *);
 	if (randomize_va_space)
+#ifdef CONFIG_PAX_RANDUSTACK
+		bprm->p ^= (pax_get_random_long() & ~15) & ~PAGE_MASK;
+#else
 		bprm->p ^= get_random_int() & ~PAGE_MASK;
+#endif
 	return 0;
 err:
 	up_write(&mm->mmap_sem);
@@ -1746,4 +1750,241 @@ asmlinkage long compat_sys_execve(const char __user * filename,
 	}
 	return error;
 }
+#endif
+
+int pax_check_flags(unsigned long *flags)
+{
+	int retval = 0;
+
+#if !defined(CONFIG_X86_32) || !defined(CONFIG_PAX_SEGMEXEC)
+	if (*flags & MF_PAX_SEGMEXEC)
+	{
+		*flags &= ~MF_PAX_SEGMEXEC;
+	retval = -EINVAL;
+	}
+#endif
+
+	if ((*flags & MF_PAX_PAGEEXEC)
+
+#ifdef CONFIG_PAX_PAGEEXEC
+	    &&  (*flags & MF_PAX_SEGMEXEC)
+#endif
+
+	   )
+	{
+		*flags &= ~MF_PAX_PAGEEXEC;
+		retval = -EINVAL;
+	}
+
+	if ((*flags & MF_PAX_MPROTECT)
+
+#ifdef CONFIG_PAX_MPROTECT
+	    && !(*flags & (MF_PAX_PAGEEXEC | MF_PAX_SEGMEXEC))
+#endif
+
+	   )
+	{
+		*flags &= ~MF_PAX_MPROTECT;
+	retval = -EINVAL;
+	}
+
+	if ((*flags & MF_PAX_EMUTRAMP)
+
+#ifdef CONFIG_PAX_EMUTRAMP
+	    && !(*flags & (MF_PAX_PAGEEXEC | MF_PAX_SEGMEXEC))
+#endif
+
+	   )
+	{
+		*flags &= ~MF_PAX_EMUTRAMP;
+		retval = -EINVAL;
+	}
+
+	return retval;
+}
+
+EXPORT_SYMBOL(pax_check_flags);
+
+#if defined(CONFIG_PAX_PAGEEXEC) || defined(CONFIG_PAX_SEGMEXEC)
+char *pax_get_path(const struct path *path, char *buf, int buflen)
+{
+	char *pathname = d_path(path, buf, buflen);
+
+	if (IS_ERR(pathname))
+		goto toolong;
+
+	pathname = mangle_path(buf, pathname, "\t\n\\");
+	if (!pathname)
+		goto toolong;
+
+	*pathname = 0;
+	return buf;
+
+toolong:
+	return "<path too long>";
+}
+EXPORT_SYMBOL(pax_get_path);
+
+void pax_report_fault(struct pt_regs *regs, void *pc, void *sp)
+{
+	struct task_struct *tsk = current;
+	struct mm_struct *mm = current->mm;
+	char *buffer_exec = (char *)__get_free_page(GFP_KERNEL);
+	char *buffer_fault = (char *)__get_free_page(GFP_KERNEL);
+	char *path_exec = NULL;
+	char *path_fault = NULL;
+	unsigned long start = 0UL, end = 0UL, offset = 0UL;
+	siginfo_t info = { };
+
+	if (buffer_exec && buffer_fault) {
+		struct vm_area_struct *vma, *vma_exec = NULL, *vma_fault = NULL;
+
+		down_read(&mm->mmap_sem);
+		vma = mm->mmap;
+		while (vma && (!vma_exec || !vma_fault)) {
+			if (vma->vm_file && mm->exe_file == vma->vm_file && (vma->vm_flags & VM_EXEC))
+				vma_exec = vma;
+			if (vma->vm_start <= (unsigned long)pc && (unsigned long)pc < vma->vm_end)
+				vma_fault = vma;
+			vma = vma->vm_next;
+		}
+		if (vma_exec)
+			path_exec = pax_get_path(&vma_exec->vm_file->f_path, buffer_exec, PAGE_SIZE);
+		if (vma_fault) {
+			start = vma_fault->vm_start;
+			end = vma_fault->vm_end;
+			offset = vma_fault->vm_pgoff << PAGE_SHIFT;
+			if (vma_fault->vm_file)
+				path_fault = pax_get_path(&vma_fault->vm_file->f_path, buffer_fault, PAGE_SIZE);
+			else
+				path_fault = "<anonymous mapping>";
+		}
+		up_read(&mm->mmap_sem);
+	}
+	printk(KERN_ERR "PAX: execution attempt in: %s, %08lx-%08lx %08lx\n", path_fault, start, end, offset);
+	printk(KERN_ERR "PAX: terminating task: %s(%s):%d, uid/euid: %u/%u, PC: %p, SP: %p\n", path_exec, tsk->comm, task_pid_nr(tsk),
+			from_kuid_munged(&init_user_ns, task_uid(tsk)), from_kuid_munged(&init_user_ns, task_euid(tsk)), pc, sp);
+	free_page((unsigned long)buffer_exec);
+	free_page((unsigned long)buffer_fault);
+	pax_report_insns(regs, pc, sp);
+	info.si_signo = SIGKILL;
+	info.si_errno = 0;
+	info.si_code = SI_KERNEL;
+	info.si_pid = 0;
+	info.si_uid = 0;
+	do_coredump(&info);
+}
+#endif
+
+#ifdef CONFIG_PAX_REFCOUNT
+void pax_report_refcount_overflow(struct pt_regs *regs)
+{
+	printk(KERN_ERR "PAX: refcount overflow detected in: %s:%d, uid/euid: %u/%u\n", current->comm, task_pid_nr(current),
+			from_kuid_munged(&init_user_ns, current_uid()), from_kuid_munged(&init_user_ns, current_euid()));
+	print_symbol(KERN_ERR "PAX: refcount overflow occured at: %s\n", instruction_pointer(regs));
+	preempt_disable();
+	show_regs(regs);
+	preempt_enable();
+	force_sig_info(SIGKILL, SEND_SIG_FORCED, current);
+}
+#endif
+
+#ifdef CONFIG_PAX_USERCOPY
+/* 0: not at all, 1: fully, 2: fully inside frame, -1: partially (implies an error) */
+static noinline int check_stack_object(const void *obj, unsigned long len)
+{
+	const void * const stack = task_stack_page(current);
+	const void * const stackend = stack + THREAD_SIZE;
+
+#if defined(CONFIG_FRAME_POINTER) && defined(CONFIG_X86)
+	const void *frame = NULL;
+	const void *oldframe;
+#endif
+
+	if (obj + len < obj)
+		return -1;
+
+	if (obj + len <= stack || stackend <= obj)
+		return 0;
+
+	if (obj < stack || stackend < obj + len)
+		return -1;
+
+#if defined(CONFIG_FRAME_POINTER) && defined(CONFIG_X86)
+	oldframe = __builtin_frame_address(1);
+	if (oldframe)
+		frame = __builtin_frame_address(2);
+	/*
+	  low ----------------------------------------------> high
+	  [saved bp][saved ip][args][local vars][saved bp][saved ip]
+			      ^----------------^
+			  allow copies only within here
+	*/
+	while (stack <= frame && frame < stackend) {
+		/* if obj + len extends past the last frame, this
+		   check won't pass and the next frame will be 0,
+		   causing us to bail out and correctly report
+		   the copy as invalid
+		*/
+		if (obj + len <= frame)
+			return obj >= oldframe + 2 * sizeof(void *) ? 2 : -1;
+		oldframe = frame;
+		frame = *(const void * const *)frame;
+	}
+	return -1;
+#else
+	return 1;
+#endif
+}
+
+static __noreturn void pax_report_usercopy(const void *ptr, unsigned long len, bool to_user, const char *type)
+{
+	printk(KERN_ERR "PAX: kernel memory %s attempt detected %s %p (%s) (%lu bytes)\n",
+		to_user ? "leak" : "overwrite", to_user ? "from" : "to", ptr, type ? : "unknown", len);
+	dump_stack();
+	do_group_exit(SIGKILL);
+}
+#endif
+
+void __check_object_size(const void *ptr, unsigned long n, bool to_user)
+{
+
+#ifdef CONFIG_PAX_USERCOPY
+	const char *type;
+
+	if (!n)
+		return;
+
+	type = check_heap_object(ptr, n);
+	if (!type) {
+		if (check_stack_object(ptr, n) != -1)
+			return;
+		type = "<process stack>";
+	}
+
+	pax_report_usercopy(ptr, n, to_user, type);
+#endif
+
+}
+EXPORT_SYMBOL(__check_object_size);
+
+#ifdef CONFIG_PAX_MEMORY_STACKLEAK
+void pax_track_stack(void)
+{
+	unsigned long sp = (unsigned long)&sp;
+	if (sp < current_thread_info()->lowest_stack &&
+	    sp > (unsigned long)task_stack_page(current))
+		current_thread_info()->lowest_stack = sp;
+}
+EXPORT_SYMBOL(pax_track_stack);
+#endif
+
+#ifdef CONFIG_PAX_SIZE_OVERFLOW
+void report_size_overflow(const char *file, unsigned int line, const char *func, const char *ssa_name)
+{
+	printk(KERN_ERR "PAX: size overflow detected in function %s %s:%u %s", func, file, line, ssa_name);
+	dump_stack();
+	do_group_exit(SIGKILL);
+}
+EXPORT_SYMBOL(report_size_overflow);
 #endif
