@@ -119,7 +119,7 @@ struct devfreq_governor {
 				u32 *flag);
 	int (*event_handler)(struct devfreq *devfreq,
 				unsigned int event, void *data);
-};
+} __do_const;
 
 /**
  * struct devfreq - Device devfreq structure

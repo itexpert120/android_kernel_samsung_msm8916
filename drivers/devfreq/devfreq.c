@@ -509,7 +509,7 @@ struct devfreq *devfreq_add_device(struct device *dev,
 	devfreq->last_stat_updated = jiffies;
 	devfreq_set_freq_limits(devfreq);
 
-	dev_set_name(&devfreq->dev, dev_name(dev));
+	dev_set_name(&devfreq->dev, "%s", dev_name(dev));
 	err = device_register(&devfreq->dev);
 	if (err) {
 		put_device(&devfreq->dev);
@@ -628,7 +628,7 @@ int devfreq_add_governor(struct devfreq_governor *governor)
 		goto err_out;
 	}
 
-	list_add(&governor->node, &devfreq_governor_list);
+	pax_list_add((struct list_head *)&governor->node, &devfreq_governor_list);
 
 	list_for_each_entry(devfreq, &devfreq_list, node) {
 		int ret = 0;
@@ -716,7 +716,7 @@ int devfreq_remove_governor(struct devfreq_governor *governor)
 		}
 	}
 
-	list_del(&governor->node);
+	pax_list_del((struct list_head *)&governor->node);
 err_out:
 	mutex_unlock(&devfreq_list_lock);
 

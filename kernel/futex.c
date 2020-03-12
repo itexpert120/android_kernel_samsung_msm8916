@@ -245,6 +245,11 @@ get_futex_key(u32 __user *uaddr, int fshared, union futex_key *key, int rw)
 	struct page *page, *page_head;
 	int err, ro = 0;
 
+#ifdef CONFIG_PAX_SEGMEXEC
+	if ((mm->pax_flags & MF_PAX_SEGMEXEC) && address >= SEGMEXEC_TASK_SIZE)
+		return -EFAULT;
+#endif
+
 	/*
 	 * The futex address must be "naturally" aligned.
 	 */
@@ -443,7 +448,7 @@ static int cmpxchg_futex_value_locked(u32 *curval, u32 __user *uaddr,
 
 static int get_futex_value_locked(u32 *dest, u32 __user *from)
 {
-	int ret;
+	unsigned long ret;
 
 	pagefault_disable();
 	ret = __copy_from_user_inatomic(dest, from, sizeof(u32));
@@ -2924,6 +2929,7 @@ static void __init futex_detect_cmpxchg(void)
 static int __init futex_init(void)
 {
 	int i;
+	mm_segment_t oldfs;
 
 	futex_detect_cmpxchg();
 

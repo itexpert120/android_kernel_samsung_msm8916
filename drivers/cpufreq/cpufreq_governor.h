@@ -212,7 +212,7 @@ struct common_dbs_data {
 	void (*exit)(struct dbs_data *dbs_data);
 
 	/* Governor specific ops, see below */
-	void *gov_ops;
+	const void *gov_ops;
 };
 
 /* Governor Per policy data */

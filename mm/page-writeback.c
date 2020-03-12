@@ -688,7 +688,7 @@ static inline long long pos_ratio_polynom(unsigned long setpoint,
  *   card's bdi_dirty may rush to many times higher than bdi_setpoint.
  * - the bdi dirty thresh drops quickly due to change of JBOD workload
  */
-static unsigned long bdi_position_ratio(struct backing_dev_info *bdi,
+static unsigned long __intentional_overflow(-1) bdi_position_ratio(struct backing_dev_info *bdi,
 					unsigned long thresh,
 					unsigned long bg_thresh,
 					unsigned long dirty,
@@ -1782,7 +1782,7 @@ ratelimit_handler(struct notifier_block *self, unsigned long action,
 	}
 }
 
-static struct notifier_block __cpuinitdata ratelimit_nb = {
+static struct notifier_block ratelimit_nb = {
 	.notifier_call	= ratelimit_handler,
 	.next		= NULL,
 };

@@ -118,7 +118,7 @@ struct net {
 #endif
 	struct netns_ipvs	*ipvs;
 	struct sock		*diag_nlsk;
-	atomic_t		rt_genid;
+	atomic_unchecked_t	rt_genid;
 };
 
 #include <linux/seq_file_net.h>
@@ -267,7 +267,11 @@ static inline struct net *read_pnet(struct net * const *pnet)
 #define __net_init	__init
 #define __net_exit	__exit_refok
 #define __net_initdata	__initdata
+#ifdef CONSTIFY_PLUGIN
 #define __net_initconst	__initconst
+#else
+#define __net_initconst	__initdata
+#endif
 #endif
 
 struct pernet_operations {
@@ -277,7 +281,7 @@ struct pernet_operations {
 	void (*exit_batch)(struct list_head *net_exit_list);
 	int *id;
 	size_t size;
-};
+} __do_const;
 
 /*
  * Use these carefully.  If you implement a network device and it
@@ -325,12 +329,12 @@ static inline void unregister_net_sysctl_table(struct ctl_table_header *header)
 
 static inline int rt_genid(struct net *net)
 {
-	return atomic_read(&net->rt_genid);
+	return atomic_read_unchecked(&net->rt_genid);
 }
 
 static inline void rt_genid_bump(struct net *net)
 {
-	atomic_inc(&net->rt_genid);
+	atomic_inc_unchecked(&net->rt_genid);
 }
 
 #endif /* __NET_NET_NAMESPACE_H */

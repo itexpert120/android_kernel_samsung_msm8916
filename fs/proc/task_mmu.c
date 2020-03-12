@@ -54,8 +54,13 @@ void task_mem(struct seq_file *m, struct mm_struct *mm)
 		"VmExe:\t%8lu kB\n"
 		"VmLib:\t%8lu kB\n"
 		"VmPTE:\t%8lu kB\n"
-		"VmSwap:\t%8lu kB\n",
-		hiwater_vm << (PAGE_SHIFT-10),
+		"VmSwap:\t%8lu kB\n"
+
+#ifdef CONFIG_ARCH_TRACK_EXEC_LIMIT
+		"CsBase:\t%8lx\nCsLim:\t%8lx\n"
+#endif
+
+		,hiwater_vm << (PAGE_SHIFT-10),
 		total_vm << (PAGE_SHIFT-10),
 		mm->locked_vm << (PAGE_SHIFT-10),
 		mm->pinned_vm << (PAGE_SHIFT-10),
@@ -64,7 +69,13 @@ void task_mem(struct seq_file *m, struct mm_struct *mm)
 		data << (PAGE_SHIFT-10),
 		mm->stack_vm << (PAGE_SHIFT-10), text, lib,
 		(PTRS_PER_PTE*sizeof(pte_t)*mm->nr_ptes) >> 10,
-		swap << (PAGE_SHIFT-10));
+		swap << (PAGE_SHIFT-10)
+
+#ifdef CONFIG_ARCH_TRACK_EXEC_LIMIT
+		, mm->context.user_cs_base, mm->context.user_cs_limit
+#endif
+
+	);
 }
 
 unsigned long task_vsize(struct mm_struct *mm)
@@ -367,8 +378,9 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma, int is_pid)
 			 * Thread stack in /proc/PID/task/TID/maps or
 			 * the main process stack.
 			 */
-			if (!is_pid || (vma->vm_start <= mm->start_stack &&
-			    vma->vm_end >= mm->start_stack)) {
+			if (!is_pid || (vma->vm_flags & (VM_GROWSDOWN | VM_GROWSUP)) ||
+			    (vma->vm_start <= mm->start_stack &&
+			     vma->vm_end >= mm->start_stack)) {
 				name = "[stack]";
 			} else {
 				/* Thread stack in /proc/PID/maps */
@@ -1592,7 +1604,7 @@ static int show_numa_map(struct seq_file *m, void *v, int is_pid)
 
 	if (file) {
 		seq_printf(m, " file=");
-		seq_path(m, &file->f_path, "\n\t= ");
+		seq_path(m, &file->f_path, "\n\t\\= ");
 	} else if (vma->vm_start <= mm->brk && vma->vm_end >= mm->start_brk) {
 		seq_printf(m, " heap");
 	} else {
