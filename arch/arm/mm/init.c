@@ -32,6 +32,8 @@
 #include <asm/setup.h>
 #include <asm/tlb.h>
 #include <asm/fixmap.h>
+#include <asm/system_info.h>
+#include <asm/cp15.h>
 #include <asm/cputype.h>
 
 #include <asm/mach/arch.h>

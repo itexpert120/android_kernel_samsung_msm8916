@@ -3341,7 +3341,7 @@ static int packet_getsockopt(struct socket *sock, int level, int optname,
 			len = sizeof(int);
 		if (len < sizeof(int))
 			return -EINVAL;
-		if (copy_from_user(&val, optval, len))
+		if (len > sizeof(val) || copy_from_user(&val, optval, len))
 			return -EFAULT;
 		switch (val) {
 		case TPACKET_V1:

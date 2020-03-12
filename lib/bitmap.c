@@ -604,7 +604,7 @@ static int __bitmap_parselist(const char *buf, unsigned int buflen,
 {
 	unsigned a, b;
 	int c, old_c, totaldigits;
-	const char __user __force *ubuf = (const char __user __force *)buf;
+	const char __user *ubuf = (const char __force_user *)buf;
 	int at_start, in_range;
 
 	totaldigits = c = 0;

@@ -1229,7 +1229,20 @@ static int load_elf_binary(struct linux_binprm *bprm)
 			if (!total_size) {
 				retval = -EINVAL;
 				goto out_free_dentry;
+
+#ifdef CONFIG_PAX_RANDMMAP
+			/* PaX: randomize base address at the default exe base if requested */
+			if ((current->mm->pax_flags & MF_PAX_RANDMMAP) && elf_interpreter) {
+#ifdef CONFIG_SPARC64
+				load_bias = (pax_get_random_long() & ((1UL << PAX_DELTA_MMAP_LEN) - 1)) << (PAGE_SHIFT+1);
+#else
+				load_bias = (pax_get_random_long() & ((1UL << PAX_DELTA_MMAP_LEN) - 1)) << PAGE_SHIFT;
+#endif
+				load_bias = ELF_PAGESTART(PAX_ELF_ET_DYN_BASE - vaddr + load_bias);
+				elf_flags |= MAP_FIXED;
 			}
+#endif
+
 		}
 
 		error = elf_map(bprm->file, load_bias + vaddr, elf_ppnt,

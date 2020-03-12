@@ -216,11 +216,10 @@ static struct ctl_table netns_core_table[] = {
 
 static __net_init int sysctl_core_net_init(struct net *net)
 {
-	struct ctl_table *tbl;
+	ctl_table_no_const *tbl = NULL;
 
-	tbl = netns_core_table;
 	if (!net_eq(net, &init_net)) {
-		tbl = kmemdup(tbl, sizeof(netns_core_table), GFP_KERNEL);
+		tbl = kmemdup(netns_core_table, sizeof(netns_core_table), GFP_KERNEL);
 		if (tbl == NULL)
 			goto err_dup;
 

@@ -510,7 +510,7 @@ EXPORT_SYMBOL(usecs_to_jiffies);
  * The >> (NSEC_JIFFIE_SC - SEC_JIFFIE_SC) converts the scaled nsec
  * value to a scaled second value.
  */
-static unsigned long
+static unsigned long __intentional_overflow(-1)
 __timespec_to_jiffies(unsigned long sec, long nsec)
 {
 	nsec = nsec + TICK_NSEC - 1;

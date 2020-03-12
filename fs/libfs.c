@@ -165,6 +165,9 @@ int dcache_readdir(struct file * filp, void * dirent, filldir_t filldir)
 
 			for (p=q->next; p != &dentry->d_subdirs; p=p->next) {
 				struct dentry *next;
+				char d_name[sizeof(next->d_iname)];
+				const unsigned char *name;
+
 				next = list_entry(p, struct dentry, d_child);
 				spin_lock_nested(&next->d_lock, DENTRY_D_LOCK_NESTED);
 				if (!simple_positive(next)) {

@@ -33,6 +33,7 @@ static int try_to_freeze_tasks(bool user_only)
 	u64 elapsed_msecs64;
 	unsigned int elapsed_msecs;
 	bool wakeup = false;
+	bool timedout = false;
 	int sleep_usecs = USEC_PER_MSEC;
 
 	do_gettimeofday(&start);
