@@ -981,10 +981,15 @@ static inline int is_mergeable_anon_vma(struct anon_vma *anon_vma1,
  */
 static int
 can_vma_merge_before(struct vm_area_struct *vma, unsigned long vm_flags,
-	struct anon_vma *anon_vma, struct file *file, pgoff_t vm_pgoff,
-	const char __user *anon_name)
+	struct anon_vma *anon_vma, struct file *file, pgoff_t vm_pgoff)
 {
-	if (is_mergeable_vma(vma, file, vm_flags, anon_name) &&
+
+#ifdef CONFIG_PAX_SEGMEXEC
+	if ((vma->vm_mm->pax_flags & MF_PAX_SEGMEXEC) && vma->vm_start == SEGMEXEC_TASK_SIZE)
+		return 0;
+#endif
+
+	if (is_mergeable_vma(vma, file, vm_flags) &&
 	    is_mergeable_anon_vma(anon_vma, vma->anon_vma, vma)) {
 		if (vma->vm_pgoff == vm_pgoff)
 			return 1;
@@ -1001,10 +1006,15 @@ can_vma_merge_before(struct vm_area_struct *vma, unsigned long vm_flags,
  */
 static int
 can_vma_merge_after(struct vm_area_struct *vma, unsigned long vm_flags,
-	struct anon_vma *anon_vma, struct file *file, pgoff_t vm_pgoff,
-	const char __user *anon_name)
+	struct anon_vma *anon_vma, struct file *file, pgoff_t vm_pgoff)
 {
-	if (is_mergeable_vma(vma, file, vm_flags, anon_name) &&
+
+#ifdef CONFIG_PAX_SEGMEXEC
+	if ((vma->vm_mm->pax_flags & MF_PAX_SEGMEXEC) && vma->vm_end == SEGMEXEC_TASK_SIZE)
+		return 0;
+#endif
+
+	if (is_mergeable_vma(vma, file, vm_flags) &&
 	    is_mergeable_anon_vma(anon_vma, vma->anon_vma, vma)) {
 		pgoff_t vm_pglen;
 		vm_pglen = (vma->vm_end - vma->vm_start) >> PAGE_SHIFT;
@@ -1046,13 +1056,19 @@ can_vma_merge_after(struct vm_area_struct *vma, unsigned long vm_flags,
 struct vm_area_struct *vma_merge(struct mm_struct *mm,
 			struct vm_area_struct *prev, unsigned long addr,
 			unsigned long end, unsigned long vm_flags,
-		     	struct anon_vma *anon_vma, struct file *file,
-			pgoff_t pgoff, struct mempolicy *policy,
-			const char __user *anon_name)
+			struct anon_vma *anon_vma, struct file *file,
+			pgoff_t pgoff, struct mempolicy *policy)
 {
 	pgoff_t pglen = (end - addr) >> PAGE_SHIFT;
 	struct vm_area_struct *area, *next;
 	int err;
+
+#ifdef CONFIG_PAX_SEGMEXEC
+	unsigned long addr_m = addr + SEGMEXEC_TASK_SIZE, end_m = end + SEGMEXEC_TASK_SIZE;
+	struct vm_area_struct *area_m = NULL, *next_m = NULL, *prev_m = NULL;
+
+	BUG_ON((mm->pax_flags & MF_PAX_SEGMEXEC) && SEGMEXEC_TASK_SIZE < end);
+#endif
 
 	/*
 	 * We later require that vma->vm_flags == vm_flags,
@@ -1126,14 +1142,29 @@ struct vm_area_struct *vma_merge(struct mm_struct *mm,
 	 */
 	if (next && end == next->vm_start &&
  			mpol_equal(policy, vma_policy(next)) &&
-			can_vma_merge_before(next, vm_flags, anon_vma,
-					file, pgoff+pglen, anon_name)) {
-		if (prev && addr < prev->vm_end)	/* case 4 */
+			can_vma_merge_before(next, vm_flags,
+					anon_vma, file, pgoff+pglen)) {
+		if (prev && addr < prev->vm_end) {	/* case 4 */
 			err = vma_adjust(prev, prev->vm_start,
 				addr, prev->vm_pgoff, NULL);
-		else					/* cases 3, 8 */
+
+#ifdef CONFIG_PAX_SEGMEXEC
+			if (!err && prev_m)
+				err = vma_adjust(prev_m, prev_m->vm_start,
+						addr_m, prev_m->vm_pgoff, NULL);
+#endif
+
+		} else {				/* cases 3, 8 */
 			err = vma_adjust(area, addr, next->vm_end,
 				next->vm_pgoff - pglen, NULL);
+
+#ifdef CONFIG_PAX_SEGMEXEC
+			if (!err && area_m)
+				err = vma_adjust(area_m, addr_m, next_m->vm_end,
+						next_m->vm_pgoff - pglen, NULL);
+#endif
+
+		}
 		if (err)
 			return NULL;
 		khugepaged_enter_vma_merge(area);
@@ -1869,8 +1900,19 @@ check_current:
 		/* Check if current node has a suitable gap */
 		if (gap_start > high_limit)
 			return -ENOMEM;
-		if (gap_end >= low_limit &&
-		    gap_end > gap_start && gap_end - gap_start >= length)
+		if (vma->vm_prev && (vma->vm_prev->vm_flags & VM_GROWSUP)) {
+			if (gap_end - gap_start > sysctl_heap_stack_gap)
+				gap_start += sysctl_heap_stack_gap;
+			else
+				gap_start = gap_end;
+		}
+		if (vma->vm_flags & VM_GROWSDOWN) {
+			if (gap_end - gap_start > sysctl_heap_stack_gap)
+				gap_end -= sysctl_heap_stack_gap;
+			else
+				gap_end = gap_start;
+		}
+		if (gap_end >= low_limit && gap_end - gap_start >= length)
 			goto found;
 
 		/* Visit right subtree if it looks promising */
@@ -1973,8 +2015,19 @@ check_current:
 		gap_end = vm_start_gap(vma);
 		if (gap_end < low_limit)
 			return -ENOMEM;
-		if (gap_start <= high_limit &&
-		    gap_end > gap_start && gap_end - gap_start >= length)
+		if (vma->vm_prev && (vma->vm_prev->vm_flags & VM_GROWSUP)) {
+			if (gap_end - gap_start > sysctl_heap_stack_gap)
+				gap_start += sysctl_heap_stack_gap;
+			else
+				gap_start = gap_end;
+		}
+		if (vma->vm_flags & VM_GROWSDOWN) {
+			if (gap_end - gap_start > sysctl_heap_stack_gap)
+				gap_end -= sysctl_heap_stack_gap;
+			else
+				gap_end = gap_start;
+		}
+		if (gap_start <= high_limit && gap_end - gap_start >= length)
 			goto found;
 
 		/* Visit left subtree if it looks promising */
@@ -2044,18 +2097,26 @@ arch_get_unmapped_area(struct file *filp, unsigned long addr,
 	if (flags & MAP_FIXED)
 		return addr;
 
+#ifdef CONFIG_PAX_RANDMMAP
+	if (!(mm->pax_flags & MF_PAX_RANDMMAP))
+#endif
+
 	if (addr) {
 		addr = PAGE_ALIGN(addr);
 		vma = find_vma_prev(mm, addr, &prev);
-		if (TASK_SIZE - len >= addr && addr >= mmap_min_addr &&
-		    (!vma || addr + len <= vm_start_gap(vma)) &&
-		    (!prev || addr >= vm_end_gap(prev)))
+		if (TASK_SIZE - len >= addr && check_heap_stack_gap(vma, addr, len))
 			return addr;
 	}
 
 	info.flags = 0;
 	info.length = len;
 	info.low_limit = TASK_UNMAPPED_BASE;
+
+#ifdef CONFIG_PAX_RANDMMAP
+	if (mm->pax_flags & MF_PAX_RANDMMAP)
+		info.low_limit += mm->delta_mmap;
+#endif
+
 	info.high_limit = TASK_SIZE;
 	info.align_mask = 0;
 	return vm_unmapped_area(&info);
@@ -2083,6 +2144,10 @@ arch_get_unmapped_area_topdown(struct file *filp, const unsigned long addr0,
 
 	if (flags & MAP_FIXED)
 		return addr;
+
+#ifdef CONFIG_PAX_RANDMMAP
+	if (!(mm->pax_flags & MF_PAX_RANDMMAP))
+#endif
 
 	/* requesting a specific address */
 	if (addr) {
@@ -2298,47 +2363,43 @@ static int acct_stack_growth(struct vm_area_struct *vma,
  */
 int expand_upwards(struct vm_area_struct *vma, unsigned long address)
 {
-	struct vm_area_struct *next;
-	unsigned long gap_addr;
-	int error = 0;
+	int error;
+	bool locknext;
 
 	if (!(vma->vm_flags & VM_GROWSUP))
 		return -EFAULT;
 
-	/* Guard against exceeding limits of the address space. */
-	address &= PAGE_MASK;
-	if (address >= (TASK_SIZE & PAGE_MASK))
+	/* Also guard against wrapping around to address 0. */
+	if (address < PAGE_ALIGN(address+1))
+		address = PAGE_ALIGN(address+1);
+	else
 		return -ENOMEM;
-	address += PAGE_SIZE;
 
-	/* Enforce stack_guard_gap */
-	gap_addr = address + stack_guard_gap;
-
-	/* Guard against overflow */
-	if (gap_addr < address || gap_addr > TASK_SIZE)
-		gap_addr = TASK_SIZE;
-
-	next = vma->vm_next;
-	if (next && next->vm_start < gap_addr &&
-			(next->vm_flags & (VM_WRITE|VM_READ|VM_EXEC))) {
-		if (!(next->vm_flags & VM_GROWSUP))
-			return -ENOMEM;
-		/* Check that both stack segments have the same anon_vma? */
-	}
-
-	/* We must make sure the anon_vma is allocated. */
+	/*
+	 * We must make sure the anon_vma is allocated
+	 * so that the anon_vma locking is not a noop.
+	 */
 	if (unlikely(anon_vma_prepare(vma)))
 		return -ENOMEM;
+	locknext = vma->vm_next && (vma->vm_next->vm_flags & VM_GROWSDOWN);
+	if (locknext && anon_vma_prepare(vma->vm_next))
+		return -ENOMEM;
+	vma_lock_anon_vma(vma);
+	if (locknext)
+		vma_lock_anon_vma(vma->vm_next);
 
 	/*
 	 * vma->vm_start/vm_end cannot change under us because the caller
 	 * is required to hold the mmap_sem in read mode.  We need the
-	 * anon_vma lock to serialize against concurrent expand_stacks.
+	 * anon_vma locks to serialize against concurrent expand_stacks
+	 * and expand_upwards.
 	 */
-	vma_lock_anon_vma(vma);
+	error = 0;
 
 	/* Somebody else might have raced and expanded it already */
-	if (address > vma->vm_end) {
+	if (vma->vm_next && (vma->vm_next->vm_flags & (VM_READ | VM_WRITE | VM_EXEC)) && vma->vm_next->vm_start - address < sysctl_heap_stack_gap)
+		error = -ENOMEM;
+	else if (address > vma->vm_end && (!locknext || vma->vm_next->vm_start >= address)) {
 		unsigned long size, grow;
 
 		size = address - vma->vm_start;
@@ -2404,16 +2465,15 @@ int expand_downwards(struct vm_area_struct *vma,
 	if (gap_addr > address)
 		return -ENOMEM;
 	prev = vma->vm_prev;
-	if (prev && prev->vm_end > gap_addr &&
-			(prev->vm_flags & (VM_WRITE|VM_READ|VM_EXEC))) {
-		if (!(prev->vm_flags & VM_GROWSDOWN))
-			return -ENOMEM;
-		/* Check that both stack segments have the same anon_vma? */
-	}
-
-	/* We must make sure the anon_vma is allocated. */
-	if (unlikely(anon_vma_prepare(vma)))
+#if defined(CONFIG_STACK_GROWSUP) || defined(CONFIG_IA64)
+	lockprev = prev && (prev->vm_flags & VM_GROWSUP);
+#endif
+	if (lockprev && anon_vma_prepare(prev))
 		return -ENOMEM;
+	if (lockprev)
+		vma_lock_anon_vma(prev);
+
+	vma_lock_anon_vma(vma);
 
 	/*
 	 * vma->vm_start/vm_end cannot change under us because the caller

@@ -36,6 +36,13 @@ struct vm_area_struct;
 #define ___GFP_OTHER_NODE	0x800000u
 #define ___GFP_WRITE		0x1000000u
 #define ___GFP_CMA		0x2000000u
+
+#ifdef CONFIG_PAX_USERCOPY_SLABS
+#define ___GFP_USERCOPY		0x4000000u
+#else
+#define ___GFP_USERCOPY		0
+#endif
+
 /* If the above are modified, __GFP_BITS_SHIFT may need updating */
 
 /*

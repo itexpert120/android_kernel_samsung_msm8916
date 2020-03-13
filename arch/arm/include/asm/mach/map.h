@@ -27,16 +27,16 @@ struct map_desc {
 #define MT_MINICLEAN		6
 #define MT_LOW_VECTORS		7
 #define MT_HIGH_VECTORS		8
-#define MT_MEMORY		9
+#define MT_MEMORY_RWX		9
 #define MT_ROM			10
-#define MT_MEMORY_NONCACHED	11
+#define MT_MEMORY_NONCACHED_RX	11
 #define MT_MEMORY_DTCM		12
 #define MT_MEMORY_ITCM		13
 #define MT_MEMORY_SO		14
 #define MT_MEMORY_DMA_READY	15
-#define MT_MEMORY_R		16
-#define MT_MEMORY_RW		17
-#define MT_MEMORY_RX		18
+#define MT_MEMORY_RW		16
+#define MT_MEMORY_RX		17
+#define MT_MEMORY_NONCACHED_RW	18
 #define MT_DEVICE_USER_ACCESSIBLE	19
 
 #ifdef CONFIG_MMU

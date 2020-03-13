@@ -25,6 +25,7 @@
 #include <asm/system_misc.h>
 #include <asm/system_info.h>
 #include <asm/tlbflush.h>
+#include <asm/sections.h>
 #if defined(CONFIG_ARCH_MSM_SCORPION) && !defined(CONFIG_MSM_SMP)
 #include <asm/io.h>
 #include <mach/msm_iomap.h>
@@ -641,11 +642,20 @@ do_DataAbort(unsigned long addr, unsigned int fsr, struct pt_regs *regs)
 	const struct fsr_info *inf = fsr_info + fsr_fs(fsr);
 	struct siginfo info;
 
+#ifdef CONFIG_PAX_MEMORY_UDEREF
+	if (addr < TASK_SIZE && is_domain_fault(fsr)) {
+		printk(KERN_ERR "PAX: %s:%d, uid/euid: %u/%u, attempted to access userland memory at %08lx\n", current->comm, task_pid_nr(current),
+				from_kuid_munged(&init_user_ns, current_uid()), from_kuid_munged(&init_user_ns, current_euid()), addr);
+		goto die;
+	}
+#endif
+
 	if (!inf->fn(addr, fsr & ~FSR_LNX_PF, regs))
 		return;
 
 	trace_unhandled_abort(regs, addr, fsr);
 
+die:
 	printk(KERN_ALERT "Unhandled fault: %s (0x%03x) at 0x%08lx\n",
 		inf->name, fsr, addr);
 
@@ -669,17 +679,67 @@ hook_ifault_code(int nr, int (*fn)(unsigned long, unsigned int, struct pt_regs *
 	ifsr_info[nr].name = name;
 }
 
+asmlinkage int sys_sigreturn(struct pt_regs *regs);
+asmlinkage int sys_rt_sigreturn(struct pt_regs *regs);
+
 asmlinkage void __exception
 do_PrefetchAbort(unsigned long addr, unsigned int ifsr, struct pt_regs *regs)
 {
 	const struct fsr_info *inf = ifsr_info + fsr_fs(ifsr);
 	struct siginfo info;
+	unsigned long pc = instruction_pointer(regs);
+
+	if (user_mode(regs)) {
+		unsigned long sigpage = current->mm->context.sigpage;
+
+		if (sigpage <= pc && pc < sigpage + 7*4) {
+			if (pc < sigpage + 3*4)
+				sys_sigreturn(regs);
+			else
+				sys_rt_sigreturn(regs);
+			return;
+		}
+		if (pc == 0xffff0fe0UL) {
+			/*
+			 * PaX: __kuser_get_tls emulation
+			 */
+			regs->ARM_r0 = current_thread_info()->tp_value;
+			regs->ARM_pc = regs->ARM_lr;
+			return;
+		}
+	}
+
+#if defined(CONFIG_PAX_KERNEXEC) || defined(CONFIG_PAX_MEMORY_UDEREF)
+	else if (is_domain_fault(ifsr) || is_xn_fault(ifsr)) {
+		printk(KERN_ERR "PAX: %s:%d, uid/euid: %u/%u, attempted to execute %s memory at %08lx\n",
+				current->comm, task_pid_nr(current),
+				from_kuid_munged(&init_user_ns, current_uid()),
+				from_kuid_munged(&init_user_ns, current_euid()),
+				pc >= TASK_SIZE ? "non-executable kernel" : "userland", pc);
+		goto die;
+	}
+#endif
+
+#ifdef CONFIG_PAX_REFCOUNT
+	if (fsr_fs(ifsr) == FAULT_CODE_DEBUG) {
+		unsigned int bkpt;
+
+		if (!probe_kernel_address(pc, bkpt) && cpu_to_le32(bkpt) == 0xe12f1073) {
+			current->thread.error_code = ifsr;
+			current->thread.trap_no = 0;
+			pax_report_refcount_overflow(regs);
+			fixup_exception(regs);
+			return;
+		}
+	}
+#endif
 
 	if (!inf->fn(addr, ifsr | FSR_LNX_PF, regs))
 		return;
 
 	trace_unhandled_abort(regs, addr, ifsr);
 
+die:
 	printk(KERN_ALERT "Unhandled prefetch abort: %s (0x%03x) at 0x%08lx\n",
 		inf->name, ifsr, addr);
 

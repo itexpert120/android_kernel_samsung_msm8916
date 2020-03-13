@@ -3445,27 +3445,23 @@ static int do_anonymous_page(struct mm_struct *mm, struct vm_area_struct *vma,
 		unsigned long address, pte_t *page_table, pmd_t *pmd,
 		unsigned int flags)
 {
-	struct page *page;
+	struct page *page = NULL;
 	spinlock_t *ptl;
 	pte_t entry;
 
-	pte_unmap(page_table);
-
-	/* File mapping without ->vm_ops ? */
-	if (vma->vm_flags & VM_SHARED)
-		return VM_FAULT_SIGBUS;
-
-	/* Use the zero-page for reads */
 	if (!(flags & FAULT_FLAG_WRITE)) {
 		entry = pte_mkspecial(pfn_pte(my_zero_pfn(address),
 						vma->vm_page_prot));
-		page_table = pte_offset_map_lock(mm, pmd, address, &ptl);
+		ptl = pte_lockptr(mm, pmd);
+		spin_lock(ptl);
 		if (!pte_none(*page_table))
 			goto unlock;
 		goto setpte;
 	}
 
 	/* Allocate our own private page. */
+	pte_unmap(page_table);
+
 	if (unlikely(anon_vma_prepare(vma)))
 		goto oom;
 	page = alloc_zeroed_user_highpage_movable(vma, address);
@@ -4016,8 +4012,40 @@ static int __handle_mm_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 	pmd_t *pmd;
 	pte_t *pte;
 
+#ifdef CONFIG_PAX_SEGMEXEC
+	struct vm_area_struct *vma_m;
+#endif
+
 	if (unlikely(is_vm_hugetlb_page(vma)))
 		return hugetlb_fault(mm, vma, address, flags);
+
+#ifdef CONFIG_PAX_SEGMEXEC
+	vma_m = pax_find_mirror_vma(vma);
+	if (vma_m) {
+		unsigned long address_m;
+		pgd_t *pgd_m;
+		pud_t *pud_m;
+		pmd_t *pmd_m;
+
+		if (vma->vm_start > vma_m->vm_start) {
+			address_m = address;
+			address -= SEGMEXEC_TASK_SIZE;
+			vma = vma_m;
+		} else
+			address_m = address + SEGMEXEC_TASK_SIZE;
+
+		pgd_m = pgd_offset(mm, address_m);
+		pud_m = pud_alloc(mm, pgd_m, address_m);
+		if (!pud_m)
+			return VM_FAULT_OOM;
+		pmd_m = pmd_alloc(mm, pud_m, address_m);
+		if (!pmd_m)
+			return VM_FAULT_OOM;
+		if (!pmd_present(*pmd_m) && __pte_alloc(mm, vma_m, pmd_m, address_m))
+			return VM_FAULT_OOM;
+		pax_unmap_mirror_pte(vma_m, address_m, pmd_m);
+	}
+#endif
 
 retry:
 	pgd = pgd_offset(mm, address);

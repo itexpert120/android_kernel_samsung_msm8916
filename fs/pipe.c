@@ -766,15 +766,21 @@ pipe_release(struct inode *inode, struct file *file)
 
 	__pipe_lock(pipe);
 	if (file->f_mode & FMODE_READ)
-		pipe->readers--;
+		atomic_dec(&pipe->readers);
 	if (file->f_mode & FMODE_WRITE)
-		pipe->writers--;
+		atomic_dec(&pipe->writers);
 
-	if (pipe->readers || pipe->writers) {
+	if (atomic_read(&pipe->readers) || atomic_read(&pipe->writers)) {
 		wake_up_interruptible_sync_poll(&pipe->wait, POLLIN | POLLOUT | POLLRDNORM | POLLWRNORM | POLLERR | POLLHUP);
 		kill_fasync(&pipe->fasync_readers, SIGIO, POLL_IN);
 		kill_fasync(&pipe->fasync_writers, SIGIO, POLL_OUT);
 	}
+	spin_lock(&inode->i_lock);
+	if (atomic_dec_and_test(&pipe->files)) {
+		inode->i_pipe = NULL;
+		kill = 1;
+	}
+	spin_unlock(&inode->i_lock);
 	__pipe_unlock(pipe);
 
 	put_pipe_info(inode, pipe);
@@ -1173,18 +1179,24 @@ static int fifo_open(struct inode *inode, struct file *filp)
 	return 0;
 
 err_rd:
-	if (!--pipe->readers)
+	if (atomic_dec_and_test(&pipe->readers))
 		wake_up_interruptible(&pipe->wait);
 	ret = -ERESTARTSYS;
 	goto err;
 
 err_wr:
-	if (!--pipe->writers)
+	if (atomic_dec_and_test(&pipe->writers))
 		wake_up_interruptible(&pipe->wait);
 	ret = -ERESTARTSYS;
 	goto err;
 
 err:
+	spin_lock(&inode->i_lock);
+	if (atomic_dec_and_test(&pipe->files)) {
+		inode->i_pipe = NULL;
+		kill = 1;
+	}
+	spin_unlock(&inode->i_lock);
 	__pipe_unlock(pipe);
 
 	put_pipe_info(inode, pipe);

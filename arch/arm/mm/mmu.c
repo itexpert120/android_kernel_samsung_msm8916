@@ -307,63 +307,54 @@ static struct mem_type mem_types[] __read_only = {
 		.prot_pte  = L_PTE_PRESENT | L_PTE_YOUNG | L_PTE_DIRTY |
 				L_PTE_RDONLY,
 		.prot_l1   = PMD_TYPE_TABLE,
-		.domain    = DOMAIN_USER,
+		.domain    = DOMAIN_VECTORS,
 	},
 	[MT_HIGH_VECTORS] = {
 		.prot_pte  = L_PTE_PRESENT | L_PTE_YOUNG | L_PTE_DIRTY |
 				L_PTE_USER | L_PTE_RDONLY,
 		.prot_l1   = PMD_TYPE_TABLE,
-		.domain    = DOMAIN_USER,
+		.domain    = DOMAIN_VECTORS,
 	},
-	[MT_MEMORY] = {
+	[MT_MEMORY_RWX] = {
 		.prot_pte  = L_PTE_PRESENT | L_PTE_YOUNG | L_PTE_DIRTY,
 		.prot_l1   = PMD_TYPE_TABLE,
 		.prot_sect = PMD_TYPE_SECT | PMD_SECT_AP_WRITE,
 		.domain    = DOMAIN_KERNEL,
 	},
-#ifdef CONFIG_ARM_LPAE
-	[MT_MEMORY_R] = {
-		.prot_sect = PMD_TYPE_SECT | PMD_SECT_AP2 | PMD_SECT_XN,
-		.domain    = DOMAIN_KERNEL,
-	},
 	[MT_MEMORY_RW] = {
-		.prot_sect = PMD_TYPE_SECT | PMD_SECT_XN,
-		.domain    = DOMAIN_KERNEL,
+		.prot_pte  = L_PTE_PRESENT | L_PTE_YOUNG | L_PTE_DIRTY,
+		.prot_l1   = PMD_TYPE_TABLE,
+		.prot_sect = PMD_TYPE_SECT | PMD_SECT_AP_WRITE,
+		.domain	   = DOMAIN_KERNEL,
 	},
 	[MT_MEMORY_RX] = {
-		.prot_sect = PMD_TYPE_SECT | PMD_SECT_AP2,
-		.domain    = DOMAIN_KERNEL,
+		.prot_pte  = L_PTE_PRESENT | L_PTE_YOUNG | L_PTE_KERNEXEC,
+		.prot_l1   = PMD_TYPE_TABLE,
+		.prot_sect = PMD_TYPE_SECT | PMD_SECT_KERNEXEC,
+		.domain	   = DOMAIN_KERNEL,
 	},
-#else
-	[MT_MEMORY_R] = {
-		.prot_sect = PMD_TYPE_SECT | PMD_SECT_XN,
-		.domain    = DOMAIN_KERNEL,
-	},
-	[MT_MEMORY_RW] = {
-		.prot_sect = PMD_TYPE_SECT | PMD_SECT_AP_WRITE | PMD_SECT_XN,
-		.domain    = DOMAIN_KERNEL,
-	},
-	[MT_MEMORY_RX] = {
-		.prot_sect = PMD_TYPE_SECT,
-		.domain    = DOMAIN_KERNEL,
-	},
-#endif
 	[MT_ROM] = {
-		.prot_sect = PMD_TYPE_SECT,
+		.prot_sect = PMD_TYPE_SECT | PMD_SECT_RDONLY,
 		.domain    = DOMAIN_KERNEL,
 	},
-	[MT_MEMORY_NONCACHED] = {
+	[MT_MEMORY_NONCACHED_RW] = {
 		.prot_pte  = L_PTE_PRESENT | L_PTE_YOUNG | L_PTE_DIRTY |
 				L_PTE_MT_BUFFERABLE,
 		.prot_l1   = PMD_TYPE_TABLE,
 		.prot_sect = PMD_TYPE_SECT | PMD_SECT_AP_WRITE,
 		.domain    = DOMAIN_KERNEL,
 	},
-	[MT_MEMORY_DTCM] = {
-		.prot_pte  = L_PTE_PRESENT | L_PTE_YOUNG | L_PTE_DIRTY |
-				L_PTE_XN,
+	[MT_MEMORY_NONCACHED_RX] = {
+		.prot_pte  = L_PTE_PRESENT | L_PTE_YOUNG | L_PTE_KERNEXEC |
+				L_PTE_MT_BUFFERABLE,
 		.prot_l1   = PMD_TYPE_TABLE,
-		.prot_sect = PMD_TYPE_SECT | PMD_SECT_XN,
+		.prot_sect = PMD_TYPE_SECT | PMD_SECT_KERNEXEC,
+		.domain    = DOMAIN_KERNEL,
+	},
+	[MT_MEMORY_DTCM] = {
+		.prot_pte  = L_PTE_PRESENT | L_PTE_YOUNG | L_PTE_DIRTY,
+		.prot_l1   = PMD_TYPE_TABLE,
+		.prot_sect = PMD_TYPE_SECT | PMD_SECT_RDONLY,
 		.domain    = DOMAIN_KERNEL,
 	},
 	[MT_MEMORY_ITCM] = {
@@ -380,8 +371,7 @@ static struct mem_type mem_types[] __read_only = {
 		.domain    = DOMAIN_KERNEL,
 	},
 	[MT_MEMORY_DMA_READY] = {
-		.prot_pte  = L_PTE_PRESENT | L_PTE_YOUNG | L_PTE_DIRTY |
-				L_PTE_XN,
+		.prot_pte  = L_PTE_PRESENT | L_PTE_YOUNG | L_PTE_DIRTY,
 		.prot_l1   = PMD_TYPE_TABLE,
 		.domain    = DOMAIN_KERNEL,
 	},
@@ -594,16 +584,6 @@ static void __init build_mem_type_table(void)
 	hyp_device_pgprot = s2_device_pgprot = mem_types[MT_DEVICE].prot_pte;
 
 	/*
-	 * We don't use domains on ARMv6 (since this causes problems with
-	 * v6/v7 kernels), so we must use a separate memory type for user
-	 * r/o, kernel r/w to map the vectors page.
-	 */
-#ifndef CONFIG_ARM_LPAE
-	if (cpu_arch == CPU_ARCH_ARMv6)
-		vecs_pgprot |= L_PTE_MT_VECTORS;
-#endif
-
-	/*
 	 * ARMv6 and above have extended page tables.
 	 */
 	if (cpu_arch >= CPU_ARCH_ARMv6 && (cr & CR_XP)) {
@@ -613,8 +593,9 @@ static void __init build_mem_type_table(void)
 		 * from SVC mode and no access from userspace.
 		 */
 		mem_types[MT_ROM].prot_sect |= PMD_SECT_APX|PMD_SECT_AP_WRITE;
+#ifdef CONFIG_PAX_KERNEXEC
 		mem_types[MT_MEMORY_RX].prot_sect |= PMD_SECT_APX|PMD_SECT_AP_WRITE;
-		mem_types[MT_MEMORY_R].prot_sect |= PMD_SECT_APX|PMD_SECT_AP_WRITE;
+#endif
 		mem_types[MT_MINICLEAN].prot_sect |= PMD_SECT_APX|PMD_SECT_AP_WRITE;
 		mem_types[MT_CACHECLEAN].prot_sect |= PMD_SECT_APX|PMD_SECT_AP_WRITE;
 #endif
@@ -632,14 +613,17 @@ static void __init build_mem_type_table(void)
 			mem_types[MT_DEVICE_WC].prot_pte |= L_PTE_SHARED;
 			mem_types[MT_DEVICE_CACHED].prot_sect |= PMD_SECT_S;
 			mem_types[MT_DEVICE_CACHED].prot_pte |= L_PTE_SHARED;
-			mem_types[MT_MEMORY].prot_sect |= PMD_SECT_S;
-			mem_types[MT_MEMORY].prot_pte |= L_PTE_SHARED;
-			mem_types[MT_MEMORY_DMA_READY].prot_pte |= L_PTE_SHARED;
-			mem_types[MT_MEMORY_NONCACHED].prot_sect |= PMD_SECT_S;
-			mem_types[MT_MEMORY_R].prot_sect |= PMD_SECT_S;
+			mem_types[MT_MEMORY_RWX].prot_sect |= PMD_SECT_S;
+			mem_types[MT_MEMORY_RWX].prot_pte |= L_PTE_SHARED;
 			mem_types[MT_MEMORY_RW].prot_sect |= PMD_SECT_S;
+			mem_types[MT_MEMORY_RW].prot_pte |= L_PTE_SHARED;
 			mem_types[MT_MEMORY_RX].prot_sect |= PMD_SECT_S;
-			mem_types[MT_MEMORY_NONCACHED].prot_pte |= L_PTE_SHARED;
+			mem_types[MT_MEMORY_RX].prot_pte |= L_PTE_SHARED;
+			mem_types[MT_MEMORY_DMA_READY].prot_pte |= L_PTE_SHARED;
+			mem_types[MT_MEMORY_NONCACHED_RW].prot_sect |= PMD_SECT_S;
+			mem_types[MT_MEMORY_NONCACHED_RW].prot_pte |= L_PTE_SHARED;
+			mem_types[MT_MEMORY_NONCACHED_RX].prot_sect |= PMD_SECT_S;
+			mem_types[MT_MEMORY_NONCACHED_RX].prot_pte |= L_PTE_SHARED;
 		}
 	}
 
@@ -698,13 +682,15 @@ static void __init build_mem_type_table(void)
 
 	mem_types[MT_LOW_VECTORS].prot_l1 |= ecc_mask;
 	mem_types[MT_HIGH_VECTORS].prot_l1 |= ecc_mask;
-	mem_types[MT_MEMORY].prot_sect |= ecc_mask | cp->pmd;
-	mem_types[MT_MEMORY].prot_pte |= kern_pgprot;
-	mem_types[MT_MEMORY_DMA_READY].prot_pte |= kern_pgprot;
-	mem_types[MT_MEMORY_NONCACHED].prot_sect |= ecc_mask;
-	mem_types[MT_MEMORY_R].prot_sect |= ecc_mask | cp->pmd;
+	mem_types[MT_MEMORY_RWX].prot_sect |= ecc_mask | cp->pmd;
+	mem_types[MT_MEMORY_RWX].prot_pte |= kern_pgprot;
 	mem_types[MT_MEMORY_RW].prot_sect |= ecc_mask | cp->pmd;
+	mem_types[MT_MEMORY_RW].prot_pte |= kern_pgprot;
 	mem_types[MT_MEMORY_RX].prot_sect |= ecc_mask | cp->pmd;
+	mem_types[MT_MEMORY_RX].prot_pte |= kern_pgprot;
+	mem_types[MT_MEMORY_DMA_READY].prot_pte |= kern_pgprot;
+	mem_types[MT_MEMORY_NONCACHED_RW].prot_sect |= ecc_mask;
+	mem_types[MT_MEMORY_NONCACHED_RX].prot_sect |= ecc_mask;
 	mem_types[MT_ROM].prot_sect |= cp->pmd;
 
 	switch (cp->pmd) {
@@ -1315,18 +1301,15 @@ void __init arm_mm_memblock_reserve(void)
  * called function.  This means you can't use any function or debugging
  * method which may touch any device, otherwise the kernel _will_ crash.
  */
+
+static char vectors[PAGE_SIZE * 2] __read_only __aligned(PAGE_SIZE);
+
 static void __init devicemaps_init(const struct machine_desc *mdesc)
 {
 	struct map_desc map;
 	unsigned long addr;
-	void *vectors;
 
-	/*
-	 * Allocate the vector page early.
-	 */
-	vectors = early_alloc(PAGE_SIZE * 2);
-
-	early_trap_init(vectors);
+	early_trap_init(&vectors);
 
 	for (addr = VMALLOC_START; addr; addr += PMD_SIZE)
 		pmd_clear(pmd_off_k(addr));
@@ -1432,96 +1415,6 @@ static void __init kmap_init(void)
 #endif
 }
 
-#ifdef CONFIG_STRICT_MEMORY_RWX
-static struct {
-	pmd_t *pmd_to_flush;
-	pmd_t *pmd;
-	unsigned long addr;
-	pmd_t saved_pmd;
-	bool made_writeable;
-} mem_unprotect;
-
-static DEFINE_SPINLOCK(mem_text_writeable_lock);
-
-void mem_text_writeable_spinlock(unsigned long *flags)
-{
-	spin_lock_irqsave(&mem_text_writeable_lock, *flags);
-}
-
-void mem_text_writeable_spinunlock(unsigned long *flags)
-{
-	spin_unlock_irqrestore(&mem_text_writeable_lock, *flags);
-}
-
-/*
- * mem_text_address_writeable() and mem_text_address_restore()
- * should be called as a pair. They are used to make the
- * specified address in the kernel text section temporarily writeable
- * when it has been marked read-only by STRICT_MEMORY_RWX.
- * Used by kprobes and other debugging tools to set breakpoints etc.
- * mem_text_address_writeable() is invoked before writing.
- * After the write, mem_text_address_restore() must be called
- * to restore the original state.
- * This is only effective when used on the kernel text section
- * marked as MEMORY_RX by map_lowmem()
- *
- * They must each be called with mem_text_writeable_lock locked
- * by the caller, with no unlocking between the calls.
- * The caller should release mem_text_writeable_lock immediately
- * after the call to mem_text_address_restore().
- * Only the write and associated cache operations should be performed
- * between the calls.
- */
-
-/* this function must be called with mem_text_writeable_lock held */
-void mem_text_address_writeable(unsigned long addr)
-{
-	struct task_struct *tsk = current;
-	struct mm_struct *mm = tsk->active_mm;
-	pgd_t *pgd = pgd_offset(mm, addr);
-	pud_t *pud = pud_offset(pgd, addr);
-
-	mem_unprotect.made_writeable = 0;
-
-	if ((addr < (unsigned long)RX_AREA_START) ||
-	    (addr >= (unsigned long)RX_AREA_END))
-		return;
-
-	mem_unprotect.pmd = pmd_offset(pud, addr);
-	mem_unprotect.pmd_to_flush = mem_unprotect.pmd;
-	mem_unprotect.addr = addr & PAGE_MASK;
-
-#ifndef CONFIG_ARM_LPAE
-	if (addr & SECTION_SIZE)
-		mem_unprotect.pmd++;
-#endif
-
-	mem_unprotect.saved_pmd = *mem_unprotect.pmd;
-	if ((mem_unprotect.saved_pmd & PMD_TYPE_MASK) != PMD_TYPE_SECT)
-		return;
-
-#ifdef CONFIG_ARM_LPAE
-	*mem_unprotect.pmd &= ~PMD_SECT_AP2;
-#else
-	*mem_unprotect.pmd &= ~PMD_SECT_APX;
-#endif
-
-	flush_pmd_entry(mem_unprotect.pmd_to_flush);
-	flush_tlb_kernel_page(mem_unprotect.addr);
-	mem_unprotect.made_writeable = 1;
-}
-
-/* this function must be called with mem_text_writeable_lock held */
-void mem_text_address_restore(void)
-{
-	if (mem_unprotect.made_writeable) {
-		*mem_unprotect.pmd = mem_unprotect.saved_pmd;
-		flush_pmd_entry(mem_unprotect.pmd_to_flush);
-		flush_tlb_kernel_page(mem_unprotect.addr);
-	}
-}
-#endif
-
 void mem_text_write_kernel_word(unsigned long *addr, unsigned long word)
 {
 	unsigned long flags;
@@ -1562,48 +1455,40 @@ static void __init map_lowmem(void)
 
 		map.pfn = __phys_to_pfn(start);
 		map.virtual = __phys_to_virt(start);
-#ifdef CONFIG_STRICT_MEMORY_RWX
-		if (start <= __pa(_text) && __pa(_text) < end) {
-			map.length = SECTION_SIZE;
-			map.type = MT_MEMORY_RW;
-
-			create_mapping(&map);
-
-			map.pfn = __phys_to_pfn(start + SECTION_SIZE);
-			map.virtual = __phys_to_virt(start + SECTION_SIZE);
-			map.length = (unsigned long)RX_AREA_END - map.virtual;
-			map.type = MT_MEMORY_RX;
-
-			create_mapping(&map);
-
-			map.pfn = __phys_to_pfn(__pa(__start_rodata));
-			map.virtual = (unsigned long)__start_rodata;
-			map.length = __init_begin - __start_rodata;
-			map.type = MT_MEMORY_R;
-
-			create_mapping(&map);
-
-			map.pfn = __phys_to_pfn(__pa(__init_begin));
-			map.virtual = (unsigned long)__init_begin;
-			map.length = (char *)__arch_info_begin - __init_begin;
-			map.type = MT_MEMORY_RX;
-
-			create_mapping(&map);
-
-			map.pfn = __phys_to_pfn(__pa(__arch_info_begin));
-			map.virtual = (unsigned long)__arch_info_begin;
-			map.length = __phys_to_virt(end) -
-				(unsigned long)__arch_info_begin;
-			map.type = MT_MEMORY_RW;
-		} else {
-			map.length = end - start;
-			map.type = MT_MEMORY_RW;
-		}
-#else
 		map.length = end - start;
-		map.type = MT_MEMORY;
+
+#ifdef CONFIG_PAX_KERNEXEC
+		if (map.virtual <= (unsigned long)_stext && ((unsigned long)_end < (map.virtual + map.length))) {
+			struct map_desc kernel;
+			struct map_desc initmap;
+
+			/* when freeing initmem we will make this RW */
+			initmap.pfn = __phys_to_pfn(__pa(__init_begin));
+			initmap.virtual = (unsigned long)__init_begin;
+			initmap.length = _sdata - __init_begin;
+			initmap.type = MT_MEMORY_RWX;
+			create_mapping(&initmap);
+
+			/* when freeing initmem we will make this RX */
+			kernel.pfn = __phys_to_pfn(__pa(_stext));
+			kernel.virtual = (unsigned long)_stext;
+			kernel.length = __init_begin - _stext;
+			kernel.type = MT_MEMORY_RWX;
+			create_mapping(&kernel);
+
+			if (map.virtual < (unsigned long)_stext) {
+				map.length = (unsigned long)_stext - map.virtual;
+				map.type = MT_MEMORY_RWX;
+				create_mapping(&map);
+			}
+
+			map.pfn = __phys_to_pfn(__pa(_sdata));
+			map.virtual = (unsigned long)_sdata;
+			map.length = end - __pa(_sdata);
+		}
 #endif
 
+		map.type = MT_MEMORY_RW;
 		create_mapping(&map);
 	}
 
@@ -1654,15 +1539,6 @@ static noinline void split_pmd(pmd_t *pmd, unsigned long addr,
 
 	if (pmd_none(*base_pmd) || pmd_bad(*base_pmd)) {
 		start_pte = early_alloc(PTE_HWTABLE_OFF + PTE_HWTABLE_SIZE);
-#ifndef CONFIG_ARM_LPAE
-		/*
-		 * Following is needed when new pte is allocated for pmd[1]
-		 * cases, which may happen when base (start) address falls
-		 * under pmd[1].
-		 */
-		if (addr & SECTION_SIZE)
-			start_pte += pte_index(addr);
-#endif
 	} else {
 		start_pte = pte_offset_kernel(base_pmd, addr);
 	}
@@ -1708,17 +1584,6 @@ static void __init remap_pages(void)
 
 		pmd = pmd_offset(
 			pud_offset(pgd_offset(&init_mm, addr), addr), addr);
-
-#ifndef	CONFIG_ARM_LPAE
-		if (addr & SECTION_SIZE) {
-			fixup = true;
-			pmd_empty_section_gap((addr - SECTION_SIZE) & PMD_MASK);
-			pmd++;
-		}
-
-		if (end & SECTION_SIZE)
-			pmd_empty_section_gap(end);
-#endif
 
 		do {
 			next = addr + SECTION_SIZE;

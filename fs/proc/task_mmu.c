@@ -331,7 +331,6 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma, int is_pid)
 		pgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
 	}
 
-	/* We don't show the stack guard page in /proc/maps */
 	start = vma->vm_start;
 	end = vma->vm_end;
 
@@ -339,9 +338,17 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma, int is_pid)
 	seq_printf(m, "%08lx-%08lx %c%c%c%c %08llx %02x:%02x %lu ",
 			start,
 			end,
+
+#if 0
+			flags & VM_MAYREAD ? flags & VM_READ ? 'R' : '+' : flags & VM_READ ? 'r' : '-',
+			flags & VM_MAYWRITE ? flags & VM_WRITE ? 'W' : '+' : flags & VM_WRITE ? 'w' : '-',
+			flags & VM_MAYEXEC ? flags & VM_EXEC ? 'X' : '+' : flags & VM_EXEC ? 'x' : '-',
+#else
 			flags & VM_READ ? 'r' : '-',
 			flags & VM_WRITE ? 'w' : '-',
 			flags & VM_EXEC ? 'x' : '-',
+#endif
+
 			flags & VM_MAYSHARE ? 's' : 'p',
 			pgoff,
 			MAJOR(dev), MINOR(dev), ino);
@@ -352,7 +359,7 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma, int is_pid)
 	 */
 	if (file) {
 		seq_pad(m, ' ');
-		seq_path(m, &file->f_path, "\n");
+		seq_path(m, &file->f_path, "\n\\");
 		goto done;
 	}
 

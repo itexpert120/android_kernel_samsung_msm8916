@@ -11,8 +11,10 @@
 #include <linux/bug.h>
 #include <linux/kernel.h>
 #include <linux/rculist.h>
+#include <linux/mm.h>
 #include <linux/bug.h>
 
+#ifdef CONFIG_DEBUG_LIST
 /*
  * Insert a new entry between two known consecutive entries.
  *
@@ -20,21 +22,31 @@
  * the prev/next entries already!
  */
 
-void __list_add(struct list_head *new,
-			      struct list_head *prev,
-			      struct list_head *next)
+static bool __list_add_debug(struct list_head *new,
+			     struct list_head *prev,
+			     struct list_head *next)
 {
-	WARN(next->prev != prev,
+	if (WARN(next->prev != prev,
 		"list_add corruption. next->prev should be "
 		"prev (%p), but was %p. (next=%p).\n",
-		prev, next->prev, next);
-	WARN(prev->next != next,
+		prev, next->prev, next) ||
+	    WARN(prev->next != next,
 		"list_add corruption. prev->next should be "
 		"next (%p), but was %p. (prev=%p).\n",
-		next, prev->next, prev);
-	WARN(new == prev || new == next,
-	     "list_add double add: new=%p, prev=%p, next=%p.\n",
-	     new, prev, next);
+		next, prev->next, prev) ||
+	    WARN(new == prev || new == next,
+		"list_add double add: new=%p, prev=%p, next=%p.\n",
+		new, prev, next))
+		return false;
+	return true;
+}
+
+void __list_add(struct list_head *new,
+		struct list_head *prev,
+		struct list_head *next)
+{
+	if (!__list_add_debug(new, prev, next))
+		return;
 
 	BUG_ON((prev->next != next || next->prev != prev ||
 		 new == prev || new == next) && PANIC_CORRUPTION);
