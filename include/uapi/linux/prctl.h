@@ -155,9 +155,6 @@
  */
 #define PR_SET_TIMERSLACK_PID 41
 
-#define PR_SET_VMA		0x53564d41
-# define PR_SET_VMA_ANON_NAME		0
-
 /* Control the ambient capability set */
 #define PR_CAP_AMBIENT			47
 # define PR_CAP_AMBIENT_IS_SET		1
