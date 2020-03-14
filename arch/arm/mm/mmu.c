@@ -1491,35 +1491,6 @@ static void __init map_lowmem(void)
 		map.type = MT_MEMORY_RW;
 		create_mapping(&map);
 	}
-
-	svm = early_alloc_aligned(sizeof(*svm) * nr, __alignof__(*svm));
-
-	for_each_memblock(memory, reg) {
-		struct vm_struct *vm;
-
-		start = reg->base;
-		end = start + reg->size;
-
-		if (end > arm_lowmem_limit)
-			end = arm_lowmem_limit;
-		if (start >= end)
-			break;
-
-		vm = &svm->vm;
-		pfn = __phys_to_pfn(start);
-		vaddr = __phys_to_virt(start);
-		length = end - start;
-		type = MT_MEMORY;
-
-		vm->addr = (void *)(vaddr & PAGE_MASK);
-		vm->size = PAGE_ALIGN(length + (vaddr & ~PAGE_MASK));
-		vm->phys_addr = __pfn_to_phys(pfn);
-		vm->flags = VM_LOWMEM;
-		vm->flags |= VM_ARM_MTYPE(type);
-		vm->caller = map_lowmem;
-		add_static_vm_early(svm++);
-		mark_vmalloc_reserved_area(vm->addr, vm->size);
-	}
 }
 
 #ifdef CONFIG_FORCE_PAGES

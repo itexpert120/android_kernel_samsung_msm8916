@@ -744,25 +744,11 @@ pipe_poll(struct file *filp, poll_table *wait)
 	return mask;
 }
 
-static void put_pipe_info(struct inode *inode, struct pipe_inode_info *pipe)
-{
-	int kill = 0;
-
-	spin_lock(&inode->i_lock);
-	if (!--pipe->files) {
-		inode->i_pipe = NULL;
-		kill = 1;
-	}
-	spin_unlock(&inode->i_lock);
-
-	if (kill)
-		free_pipe_info(pipe);
-}
-
 static int
 pipe_release(struct inode *inode, struct file *file)
 {
-	struct pipe_inode_info *pipe = file->private_data;
+	struct pipe_inode_info *pipe = inode->i_pipe;
+	int kill = 0;
 
 	__pipe_lock(pipe);
 	if (file->f_mode & FMODE_READ)
@@ -783,7 +769,9 @@ pipe_release(struct inode *inode, struct file *file)
 	spin_unlock(&inode->i_lock);
 	__pipe_unlock(pipe);
 
-	put_pipe_info(inode, pipe);
+	if (kill)
+		free_pipe_info(pipe);
+
 	return 0;
 }
 
@@ -1076,6 +1064,7 @@ static int fifo_open(struct inode *inode, struct file *filp)
 {
 	struct pipe_inode_info *pipe;
 	bool is_pipe = inode->i_sb->s_magic == PIPEFS_MAGIC;
+	int kill = 0;
 	int ret;
 
 	filp->f_version = 0;
@@ -1198,8 +1187,8 @@ err:
 	}
 	spin_unlock(&inode->i_lock);
 	__pipe_unlock(pipe);
-
-	put_pipe_info(inode, pipe);
+	if (kill)
+		free_pipe_info(pipe);
 	return ret;
 }
 
