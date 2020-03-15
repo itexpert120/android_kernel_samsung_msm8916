@@ -144,7 +144,7 @@ static inline unsigned long zone_page_state_snapshot(struct zone *zone,
 
 static inline unsigned long global_page_state_snapshot(enum zone_stat_item item)
 {
-	long x = atomic_long_read(&vm_stat[item]);
+	long x = atomic_long_read_unchecked(&vm_stat[item]);
 
 #ifdef CONFIG_SMP
 	struct zone *zone;

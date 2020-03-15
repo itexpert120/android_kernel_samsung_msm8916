@@ -95,14 +95,14 @@ void __rcu_read_unlock(void)
 		udelay(10); /* Make preemption more probable. */
 #endif /* #ifdef CONFIG_PROVE_RCU_DELAY */
 		barrier();  /* assign before ->rcu_read_unlock_special load */
-		if (unlikely(ACCESS_ONCE(t->rcu_read_unlock_special)))
+		if (unlikely(ACCESS_ONCE_RW(t->rcu_read_unlock_special)))
 			rcu_read_unlock_special(t);
 		barrier();  /* ->rcu_read_unlock_special load before assign */
 		t->rcu_read_lock_nesting = 0;
 	}
 #ifdef CONFIG_PROVE_LOCKING
 	{
-		int rrln = ACCESS_ONCE(t->rcu_read_lock_nesting);
+		int rrln = ACCESS_ONCE_RW(t->rcu_read_lock_nesting);
 
 		WARN_ON_ONCE(rrln < 0 && rrln > INT_MIN / 2);
 	}
@@ -438,17 +438,17 @@ module_param(rcu_cpu_stall_timeout, int, 0644);
 
 int rcu_jiffies_till_stall_check(void)
 {
-	int till_stall_check = ACCESS_ONCE(rcu_cpu_stall_timeout);
+	int till_stall_check = ACCESS_ONCE_RW(rcu_cpu_stall_timeout);
 
 	/*
 	 * Limit check must be consistent with the Kconfig limits
 	 * for CONFIG_RCU_CPU_STALL_TIMEOUT.
 	 */
 	if (till_stall_check < 3) {
-		ACCESS_ONCE(rcu_cpu_stall_timeout) = 3;
+		ACCESS_ONCE_RW(rcu_cpu_stall_timeout) = 3;
 		till_stall_check = 3;
 	} else if (till_stall_check > 300) {
-		ACCESS_ONCE(rcu_cpu_stall_timeout) = 300;
+		ACCESS_ONCE_RW(rcu_cpu_stall_timeout) = 300;
 		till_stall_check = 300;
 	}
 	return till_stall_check * HZ + RCU_STALL_DELAY_DELTA;

@@ -165,13 +165,13 @@ unsigned long rcutorture_testseq;
 unsigned long rcutorture_vernum;
 
 /*
- * Return true if an RCU grace period is in progress.  The ACCESS_ONCE()s
+ * Return true if an RCU grace period is in progress.  The ACCESS_ONCE_RW()s
  * permit this function to be invoked without holding the root rcu_node
  * structure's ->lock, but of course results can be subject to change.
  */
 static int rcu_gp_in_progress(struct rcu_state *rsp)
 {
-	return ACCESS_ONCE(rsp->completed) != ACCESS_ONCE(rsp->gpnum);
+	return ACCESS_ONCE_RW(rsp->completed) != ACCESS_ONCE_RW(rsp->gpnum);
 }
 
 /*
@@ -324,10 +324,10 @@ static struct rcu_node *rcu_get_root(struct rcu_state *rsp)
 static int rcu_future_needs_gp(struct rcu_state *rsp)
 {
 	struct rcu_node *rnp = rcu_get_root(rsp);
-	int idx = (ACCESS_ONCE(rnp->completed) + 1) & 0x1;
+	int idx = (ACCESS_ONCE_RW(rnp->completed) + 1) & 0x1;
 	int *fp = &rnp->need_future_gp[idx];
 
-	return ACCESS_ONCE(*fp);
+	return ACCESS_ONCE_RW(*fp);
 }
 
 /*
@@ -350,7 +350,7 @@ cpu_needs_another_gp(struct rcu_state *rsp, struct rcu_data *rdp)
 		return 1;  /* Yes, this CPU has newly registered callbacks. */
 	for (i = RCU_WAIT_TAIL; i < RCU_NEXT_TAIL; i++)
 		if (rdp->nxttail[i - 1] != rdp->nxttail[i] &&
-		    ULONG_CMP_LT(ACCESS_ONCE(rsp->completed),
+		    ULONG_CMP_LT(ACCESS_ONCE_RW(rsp->completed),
 				 rdp->nxtcompleted[i]))
 			return 1;  /* Yes, CBs for future grace period. */
 	return 0; /* No grace period needed. */
@@ -837,7 +837,7 @@ static void record_gp_stall_check_time(struct rcu_state *rsp)
 {
 	rsp->gp_start = jiffies;
 	rsp->jiffies_stall = jiffies + rcu_jiffies_till_stall_check();
-	rsp->n_force_qs_gpstart = ACCESS_ONCE(rsp->n_force_qs);
+	rsp->n_force_qs_gpstart = ACCESS_ONCE_RW(rsp->n_force_qs);
 }
 
 /*
@@ -849,7 +849,7 @@ static void rcu_check_gp_kthread_starvation(struct rcu_state *rsp)
 	unsigned long j;
 
 	j = jiffies;
-	gpa = ACCESS_ONCE(rsp->gp_activity);
+	gpa = ACCESS_ONCE_RW(rsp->gp_activity);
 	if (j - gpa > 2 * HZ)
 		pr_err("%s kthread starved for %ld jiffies!\n",
 		       rsp->name, j - gpa);
@@ -940,12 +940,12 @@ static void print_other_cpu_stall(struct rcu_state *rsp, unsigned long gpnum)
 	if (ndetected) {
 		rcu_dump_cpu_stacks(rsp);
 	} else {
-		if (ACCESS_ONCE(rsp->gpnum) != gpnum ||
-		    ACCESS_ONCE(rsp->completed) == gpnum) {
+		if (ACCESS_ONCE_RW(rsp->gpnum) != gpnum ||
+		    ACCESS_ONCE_RW(rsp->completed) == gpnum) {
 			pr_err("INFO: Stall ended before state dump start\n");
 		} else {
 			j = jiffies;
-			gpa = ACCESS_ONCE(rsp->gp_activity);
+			gpa = ACCESS_ONCE_RW(rsp->gp_activity);
 			pr_err("All QSes seen, last %s kthread activity %ld (%ld-%ld), jiffies_till_next_fqs=%ld\n",
 			       rsp->name, j - gpa, j, gpa,
 			       jiffies_till_next_fqs);
@@ -1006,12 +1006,12 @@ static void check_cpu_stall(struct rcu_state *rsp, struct rcu_data *rdp)
 
 	if (rcu_cpu_stall_suppress)
 		return;
-	j = ACCESS_ONCE(jiffies);
-	gpnum = ACCESS_ONCE(rsp->gpnum);
-	js = ACCESS_ONCE(rsp->jiffies_stall);
+	j = ACCESS_ONCE_RW(jiffies);
+	gpnum = ACCESS_ONCE_RW(rsp->gpnum);
+	js = ACCESS_ONCE_RW(rsp->jiffies_stall);
 	rnp = rdp->mynode;
 	if (rcu_gp_in_progress(rsp) &&
-	    (ACCESS_ONCE(rnp->qsmask) & rdp->grpmask) && ULONG_CMP_GE(j, js)) {
+	    (ACCESS_ONCE_RW(rnp->qsmask) & rdp->grpmask) && ULONG_CMP_GE(j, js)) {
 
 		/* We haven't checked in, so go dump stack. */
 		print_cpu_stall(rsp);
@@ -1138,7 +1138,7 @@ rcu_start_future_gp(struct rcu_node *rnp, struct rcu_data *rdp,
 	 * doing some extra useless work.
 	 */
 	if (rnp->gpnum != rnp->completed ||
-	    ACCESS_ONCE(rnp_root->gpnum) != ACCESS_ONCE(rnp_root->completed)) {
+	    ACCESS_ONCE_RW(rnp_root->gpnum) != ACCESS_ONCE_RW(rnp_root->completed)) {
 		rnp->need_future_gp[c & 0x1]++;
 		trace_rcu_future_gp(rnp, rdp, c, "Startedleaf");
 		goto out;
@@ -1221,7 +1221,7 @@ static int rcu_future_gp_cleanup(struct rcu_state *rsp, struct rcu_node *rnp)
 static void rcu_gp_kthread_wake(struct rcu_state *rsp)
 {
 	if (current == rsp->gp_kthread ||
-	    !ACCESS_ONCE(rsp->gp_flags) ||
+	    !ACCESS_ONCE_RW(rsp->gp_flags) ||
 	    !rsp->gp_kthread)
 		return;
 	wake_up(&rsp->gp_wq);
@@ -1393,8 +1393,8 @@ static void note_gp_changes(struct rcu_state *rsp, struct rcu_data *rdp)
 
 	local_irq_save(flags);
 	rnp = rdp->mynode;
-	if ((rdp->gpnum == ACCESS_ONCE(rnp->gpnum) &&
-	     rdp->completed == ACCESS_ONCE(rnp->completed)) || /* w/out lock. */
+	if ((rdp->gpnum == ACCESS_ONCE_RW(rnp->gpnum) &&
+	     rdp->completed == ACCESS_ONCE_RW(rnp->completed)) || /* w/out lock. */
 	    !raw_spin_trylock(&rnp->lock)) { /* irqs already off, so later. */
 		local_irq_restore(flags);
 		return;
@@ -1413,10 +1413,10 @@ static int rcu_gp_init(struct rcu_state *rsp)
 	struct rcu_data *rdp;
 	struct rcu_node *rnp = rcu_get_root(rsp);
 
-	ACCESS_ONCE(rsp->gp_activity) = jiffies;
+	ACCESS_ONCE_RW(rsp->gp_activity) = jiffies;
 	rcu_bind_gp_kthread();
 	raw_spin_lock_irq(&rnp->lock);
-	ACCESS_ONCE(rsp->gp_flags) = 0; /* Clear all flags: New grace period. */
+	ACCESS_ONCE_RW(rsp->gp_flags) = 0; /* Clear all flags: New grace period. */
 
 	if (rcu_gp_in_progress(rsp)) {
 		/* Grace period already in progress, don't start another.  */
@@ -1451,9 +1451,9 @@ static int rcu_gp_init(struct rcu_state *rsp)
 		rdp = this_cpu_ptr(rsp->rda);
 		rcu_preempt_check_blocked_tasks(rnp);
 		rnp->qsmask = rnp->qsmaskinit;
-		ACCESS_ONCE(rnp->gpnum) = rsp->gpnum;
+		ACCESS_ONCE_RW(rnp->gpnum) = rsp->gpnum;
 		WARN_ON_ONCE(rnp->completed != rsp->completed);
-		ACCESS_ONCE(rnp->completed) = rsp->completed;
+		ACCESS_ONCE_RW(rnp->completed) = rsp->completed;
 		if (rnp == rdp->mynode)
 			(void)__note_gp_changes(rsp, rnp, rdp);
 		rcu_preempt_boost_start_gp(rnp);
@@ -1467,7 +1467,7 @@ static int rcu_gp_init(struct rcu_state *rsp)
 			udelay(200);
 #endif /* #ifdef CONFIG_PROVE_RCU_DELAY */
 		cond_resched();
-		ACCESS_ONCE(rsp->gp_activity) = jiffies;
+		ACCESS_ONCE_RW(rsp->gp_activity) = jiffies;
 	}
 
 	mutex_unlock(&rsp->onoff_mutex);
@@ -1482,7 +1482,7 @@ int rcu_gp_fqs(struct rcu_state *rsp, int fqs_state_in)
 	int fqs_state = fqs_state_in;
 	struct rcu_node *rnp = rcu_get_root(rsp);
 
-	ACCESS_ONCE(rsp->gp_activity) = jiffies;
+	ACCESS_ONCE_RW(rsp->gp_activity) = jiffies;
 	rsp->n_force_qs++;
 	if (fqs_state == RCU_SAVE_DYNTICK) {
 		/* Collect dyntick-idle snapshots. */
@@ -1493,9 +1493,9 @@ int rcu_gp_fqs(struct rcu_state *rsp, int fqs_state_in)
 		force_qs_rnp(rsp, rcu_implicit_dynticks_qs);
 	}
 	/* Clear flag to prevent immediate re-entry. */
-	if (ACCESS_ONCE(rsp->gp_flags) & RCU_GP_FLAG_FQS) {
+	if (ACCESS_ONCE_RW(rsp->gp_flags) & RCU_GP_FLAG_FQS) {
 		raw_spin_lock_irq(&rnp->lock);
-		ACCESS_ONCE(rsp->gp_flags) &= ~RCU_GP_FLAG_FQS;
+		ACCESS_ONCE_RW(rsp->gp_flags) &= ~RCU_GP_FLAG_FQS;
 		raw_spin_unlock_irq(&rnp->lock);
 	}
 	return fqs_state;
@@ -1512,7 +1512,7 @@ static void rcu_gp_cleanup(struct rcu_state *rsp)
 	struct rcu_data *rdp;
 	struct rcu_node *rnp = rcu_get_root(rsp);
 
-	ACCESS_ONCE(rsp->gp_activity) = jiffies;
+	ACCESS_ONCE_RW(rsp->gp_activity) = jiffies;
 	raw_spin_lock_irq(&rnp->lock);
 	gp_duration = jiffies - rsp->gp_start;
 	if (gp_duration > rsp->gp_max)
@@ -1539,14 +1539,14 @@ static void rcu_gp_cleanup(struct rcu_state *rsp)
 	 */
 	rcu_for_each_node_breadth_first(rsp, rnp) {
 		raw_spin_lock_irq(&rnp->lock);
-		ACCESS_ONCE(rnp->completed) = rsp->gpnum;
+		ACCESS_ONCE_RW(rnp->completed) = rsp->gpnum;
 		rdp = this_cpu_ptr(rsp->rda);
 		if (rnp == rdp->mynode)
 			needgp = __note_gp_changes(rsp, rnp, rdp) || needgp;
 		nocb += rcu_future_gp_cleanup(rsp, rnp);
 		raw_spin_unlock_irq(&rnp->lock);
 		cond_resched();
-		ACCESS_ONCE(rsp->gp_activity) = jiffies;
+		ACCESS_ONCE_RW(rsp->gp_activity) = jiffies;
 	}
 	rnp = rcu_get_root(rsp);
 	raw_spin_lock_irq(&rnp->lock);
@@ -1559,7 +1559,7 @@ static void rcu_gp_cleanup(struct rcu_state *rsp)
 	/* Advance CBs to reduce false positives below. */
 	needgp = rcu_advance_cbs(rsp, rnp, rdp) || needgp;
 	if (needgp || cpu_needs_another_gp(rsp, rdp))
-		ACCESS_ONCE(rsp->gp_flags) = 1;
+		ACCESS_ONCE_RW(rsp->gp_flags) = 1;
 	raw_spin_unlock_irq(&rnp->lock);
 }
 
@@ -1580,13 +1580,13 @@ static int __noreturn rcu_gp_kthread(void *arg)
 		/* Handle grace-period start. */
 		for (;;) {
 			wait_event_interruptible(rsp->gp_wq,
-						 ACCESS_ONCE(rsp->gp_flags) &
+						 ACCESS_ONCE_RW(rsp->gp_flags) &
 						 RCU_GP_FLAG_INIT);
-			if ((ACCESS_ONCE(rsp->gp_flags) & RCU_GP_FLAG_INIT) &&
+			if ((ACCESS_ONCE_RW(rsp->gp_flags) & RCU_GP_FLAG_INIT) &&
 			    rcu_gp_init(rsp))
 				break;
 			cond_resched();
-			ACCESS_ONCE(rsp->gp_activity) = jiffies;
+			ACCESS_ONCE_RW(rsp->gp_activity) = jiffies;
 			flush_signals(current);
 		}
 
@@ -1602,13 +1602,13 @@ static int __noreturn rcu_gp_kthread(void *arg)
 			if (!ret)
 				rsp->jiffies_force_qs = jiffies + j;
 			ret = wait_event_interruptible_timeout(rsp->gp_wq,
-					((gf = ACCESS_ONCE(rsp->gp_flags)) &
+					((gf = ACCESS_ONCE_RW(rsp->gp_flags)) &
 					 RCU_GP_FLAG_FQS) ||
-					(!ACCESS_ONCE(rnp->qsmask) &&
+					(!ACCESS_ONCE_RW(rnp->qsmask) &&
 					 !rcu_preempt_blocked_readers_cgp(rnp)),
 					j);
 			/* If grace period done, leave loop. */
-			if (!ACCESS_ONCE(rnp->qsmask) &&
+			if (!ACCESS_ONCE_RW(rnp->qsmask) &&
 			    !rcu_preempt_blocked_readers_cgp(rnp))
 				break;
 			/* If time for quiescent-state forcing, do it. */
@@ -1616,11 +1616,11 @@ static int __noreturn rcu_gp_kthread(void *arg)
 			    (gf & RCU_GP_FLAG_FQS)) {
 				fqs_state = rcu_gp_fqs(rsp, fqs_state);
 				cond_resched();
-				ACCESS_ONCE(rsp->gp_activity) = jiffies;
+				ACCESS_ONCE_RW(rsp->gp_activity) = jiffies;
 			} else {
 				/* Deal with stray signal. */
 				cond_resched();
-				ACCESS_ONCE(rsp->gp_activity) = jiffies;
+				ACCESS_ONCE_RW(rsp->gp_activity) = jiffies;
 				flush_signals(current);
 			}
 			j = jiffies_till_next_fqs;
@@ -1662,7 +1662,7 @@ rcu_start_gp_advanced(struct rcu_state *rsp, struct rcu_node *rnp,
 		 */
 		return false;
 	}
-	ACCESS_ONCE(rsp->gp_flags) = RCU_GP_FLAG_INIT;
+	ACCESS_ONCE_RW(rsp->gp_flags) = RCU_GP_FLAG_INIT;
 	/*
 	 * We can't do wakeups while holding the rnp->lock, as that
 	 * could cause possible deadlocks with the rq->lock. Defer
@@ -1878,7 +1878,7 @@ rcu_send_cbs_to_orphanage(int cpu, struct rcu_state *rsp,
 		rsp->qlen += rdp->qlen;
 		rdp->n_cbs_orphaned += rdp->qlen;
 		rdp->qlen_lazy = 0;
-		ACCESS_ONCE(rdp->qlen) = 0;
+		ACCESS_ONCE_RW(rdp->qlen) = 0;
 	}
 
 	/*
@@ -2068,7 +2068,7 @@ static void rcu_do_batch(struct rcu_state *rsp, struct rcu_data *rdp)
 	/* If no callbacks are ready, just return. */
 	if (!cpu_has_callbacks_ready_to_invoke(rdp)) {
 		trace_rcu_batch_start(rsp->name, rdp->qlen_lazy, rdp->qlen, 0);
-		trace_rcu_batch_end(rsp->name, 0, !!ACCESS_ONCE(rdp->nxtlist),
+		trace_rcu_batch_end(rsp->name, 0, !!ACCESS_ONCE_RW(rdp->nxtlist),
 				    need_resched(), is_idle_task(current),
 				    rcu_is_callbacks_kthread());
 		return;
@@ -2124,7 +2124,7 @@ static void rcu_do_batch(struct rcu_state *rsp, struct rcu_data *rdp)
 	}
 	smp_mb(); /* List handling before counting for rcu_barrier(). */
 	rdp->qlen_lazy -= count_lazy;
-	ACCESS_ONCE(rdp->qlen) -= count;
+	ACCESS_ONCE_RW(rdp->qlen) -= count;
 	rdp->n_cbs_invoked += count;
 
 	/* Reinstate batch limit if we have worked down the excess. */
@@ -2256,7 +2256,7 @@ static void force_quiescent_state(struct rcu_state *rsp)
 	/* Funnel through hierarchy to reduce memory contention. */
 	rnp = per_cpu_ptr(rsp->rda, raw_smp_processor_id())->mynode;
 	for (; rnp != NULL; rnp = rnp->parent) {
-		ret = (ACCESS_ONCE(rsp->gp_flags) & RCU_GP_FLAG_FQS) ||
+		ret = (ACCESS_ONCE_RW(rsp->gp_flags) & RCU_GP_FLAG_FQS) ||
 		      !raw_spin_trylock(&rnp->fqslock);
 		if (rnp_old != NULL)
 			raw_spin_unlock(&rnp_old->fqslock);
@@ -2271,12 +2271,12 @@ static void force_quiescent_state(struct rcu_state *rsp)
 	/* Reached the root of the rcu_node tree, acquire lock. */
 	raw_spin_lock_irqsave(&rnp_old->lock, flags);
 	raw_spin_unlock(&rnp_old->fqslock);
-	if (ACCESS_ONCE(rsp->gp_flags) & RCU_GP_FLAG_FQS) {
+	if (ACCESS_ONCE_RW(rsp->gp_flags) & RCU_GP_FLAG_FQS) {
 		rsp->n_force_qs_lh++;
 		raw_spin_unlock_irqrestore(&rnp_old->lock, flags);
 		return;  /* Someone beat us to it. */
 	}
-	ACCESS_ONCE(rsp->gp_flags) |= RCU_GP_FLAG_FQS;
+	ACCESS_ONCE_RW(rsp->gp_flags) |= RCU_GP_FLAG_FQS;
 	raw_spin_unlock_irqrestore(&rnp_old->lock, flags);
 	rcu_gp_kthread_wake(rsp);
 }
@@ -2339,7 +2339,7 @@ static void rcu_process_callbacks(struct softirq_action *unused)
  */
 static void invoke_rcu_callbacks(struct rcu_state *rsp, struct rcu_data *rdp)
 {
-	if (unlikely(!ACCESS_ONCE(rcu_scheduler_fully_active)))
+	if (unlikely(!ACCESS_ONCE_RW(rcu_scheduler_fully_active)))
 		return;
 	if (likely(!rsp->boost)) {
 		rcu_do_batch(rsp, rdp);
@@ -2445,7 +2445,7 @@ __call_rcu(struct rcu_head *head, void (*func)(struct rcu_head *rcu),
 		local_irq_restore(flags);
 		return;
 	}
-	ACCESS_ONCE(rdp->qlen)++;
+	ACCESS_ONCE_RW(rdp->qlen)++;
 	if (lazy)
 		rdp->qlen_lazy++;
 	else
@@ -2781,13 +2781,13 @@ static int __rcu_pending(struct rcu_state *rsp, struct rcu_data *rdp)
 	}
 
 	/* Has another RCU grace period completed?  */
-	if (ACCESS_ONCE(rnp->completed) != rdp->completed) { /* outside lock */
+	if (ACCESS_ONCE_RW(rnp->completed) != rdp->completed) { /* outside lock */
 		rdp->n_rp_gp_completed++;
 		return 1;
 	}
 
 	/* Has a new RCU grace period started? */
-	if (ACCESS_ONCE(rnp->gpnum) != rdp->gpnum) { /* outside lock */
+	if (ACCESS_ONCE_RW(rnp->gpnum) != rdp->gpnum) { /* outside lock */
 		rdp->n_rp_gp_started++;
 		return 1;
 	}
@@ -2885,7 +2885,7 @@ static void _rcu_barrier(struct rcu_state *rsp)
 {
 	int cpu;
 	struct rcu_data *rdp;
-	unsigned long snap = ACCESS_ONCE(rsp->n_barrier_done);
+	unsigned long snap = ACCESS_ONCE_RW(rsp->n_barrier_done);
 	unsigned long snap_done;
 
 	_rcu_barrier_trace(rsp, "Begin", -1, snap);
@@ -2905,7 +2905,7 @@ static void _rcu_barrier(struct rcu_state *rsp)
 	 * transition.  The "if" expression below therefore rounds the old
 	 * value up to the next even number and adds two before comparing.
 	 */
-	snap_done = ACCESS_ONCE(rsp->n_barrier_done);
+	snap_done = ACCESS_ONCE_RW(rsp->n_barrier_done);
 	_rcu_barrier_trace(rsp, "Check", -1, snap_done);
 	if (ULONG_CMP_GE(snap_done, ((snap + 1) & ~0x1) + 2)) {
 		_rcu_barrier_trace(rsp, "EarlyExit", -1, snap_done);
@@ -2916,10 +2916,10 @@ static void _rcu_barrier(struct rcu_state *rsp)
 
 	/*
 	 * Increment ->n_barrier_done to avoid duplicate work.  Use
-	 * ACCESS_ONCE() to prevent the compiler from speculating
+	 * ACCESS_ONCE_RW() to prevent the compiler from speculating
 	 * the increment to precede the early-exit check.
 	 */
-	ACCESS_ONCE(rsp->n_barrier_done)++;
+	ACCESS_ONCE_RW(rsp->n_barrier_done)++;
 	WARN_ON_ONCE((rsp->n_barrier_done & 0x1) != 1);
 	_rcu_barrier_trace(rsp, "Inc1", -1, rsp->n_barrier_done);
 	smp_mb(); /* Order ->n_barrier_done increment with below mechanism. */
@@ -2949,7 +2949,7 @@ static void _rcu_barrier(struct rcu_state *rsp)
 			atomic_inc(&rsp->barrier_cpu_count);
 			__call_rcu(&rdp->barrier_head, rcu_barrier_callback,
 				   rsp, cpu, 0);
-		} else if (ACCESS_ONCE(rdp->qlen)) {
+		} else if (ACCESS_ONCE_RW(rdp->qlen)) {
 			_rcu_barrier_trace(rsp, "OnlineQ", cpu,
 					   rsp->n_barrier_done);
 			smp_call_function_single(cpu, rcu_barrier_func, rsp, 1);
@@ -2969,7 +2969,7 @@ static void _rcu_barrier(struct rcu_state *rsp)
 
 	/* Increment ->n_barrier_done to prevent duplicate work. */
 	smp_mb(); /* Keep increment after above mechanism. */
-	ACCESS_ONCE(rsp->n_barrier_done)++;
+	ACCESS_ONCE_RW(rsp->n_barrier_done)++;
 	WARN_ON_ONCE((rsp->n_barrier_done & 0x1) != 0);
 	_rcu_barrier_trace(rsp, "Inc2", -1, rsp->n_barrier_done);
 	smp_mb(); /* Keep increment before caller's subsequent code. */
@@ -3014,7 +3014,7 @@ rcu_boot_init_percpu_data(int cpu, struct rcu_state *rsp)
 	rdp->grpmask = 1UL << (cpu - rdp->mynode->grplo);
 	init_callback_list(rdp);
 	rdp->qlen_lazy = 0;
-	ACCESS_ONCE(rdp->qlen) = 0;
+	ACCESS_ONCE_RW(rdp->qlen) = 0;
 	rdp->dynticks = &per_cpu(rcu_dynticks, cpu);
 	WARN_ON_ONCE(rdp->dynticks->dynticks_nesting != DYNTICK_TASK_EXIT_IDLE);
 	WARN_ON_ONCE(atomic_read(&rdp->dynticks->dynticks) != 1);

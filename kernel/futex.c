@@ -2910,6 +2910,8 @@ static void __init futex_detect_cmpxchg(void)
 {
 #ifndef CONFIG_HAVE_FUTEX_CMPXCHG
 	u32 curval;
+	int i;
+	mm_segment_t oldfs;
 
 	/*
 	 * This will fail and we want it. Some arch implementations do

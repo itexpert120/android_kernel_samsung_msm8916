@@ -748,7 +748,7 @@ static int rcu_preempted_readers_exp(struct rcu_node *rnp)
 static int sync_rcu_preempt_exp_done(struct rcu_node *rnp)
 {
 	return !rcu_preempted_readers_exp(rnp) &&
-	       ACCESS_ONCE(rnp->expmask) == 0;
+	       ACCESS_ONCE_RW(rnp->expmask) == 0;
 }
 
 /*
@@ -842,7 +842,7 @@ void synchronize_rcu_expedited(void)
 	int trycount = 0;
 
 	smp_mb(); /* Caller's modifications seen first by other CPUs. */
-	snap = ACCESS_ONCE(sync_rcu_preempt_exp_count) + 1;
+	snap = ACCESS_ONCE_RW(sync_rcu_preempt_exp_count) + 1;
 	smp_mb(); /* Above access cannot bleed into critical section. */
 
 	/*
@@ -862,7 +862,7 @@ void synchronize_rcu_expedited(void)
 	 */
 	while (!mutex_trylock(&sync_rcu_preempt_exp_mutex)) {
 		if (ULONG_CMP_LT(snap,
-		    ACCESS_ONCE(sync_rcu_preempt_exp_count))) {
+		    ACCESS_ONCE_RW(sync_rcu_preempt_exp_count))) {
 			put_online_cpus();
 			goto mb_ret; /* Others did our work for us. */
 		}
@@ -874,7 +874,7 @@ void synchronize_rcu_expedited(void)
 			return;
 		}
 	}
-	if (ULONG_CMP_LT(snap, ACCESS_ONCE(sync_rcu_preempt_exp_count))) {
+	if (ULONG_CMP_LT(snap, ACCESS_ONCE_RW(sync_rcu_preempt_exp_count))) {
 		put_online_cpus();
 		goto unlock_mb_ret; /* Others did our work for us. */
 	}
@@ -904,7 +904,7 @@ void synchronize_rcu_expedited(void)
 
 	/* Clean up and exit. */
 	smp_mb(); /* ensure expedited GP seen before counter increment. */
-	ACCESS_ONCE(sync_rcu_preempt_exp_count)++;
+	ACCESS_ONCE_RW(sync_rcu_preempt_exp_count)++;
 unlock_mb_ret:
 	mutex_unlock(&sync_rcu_preempt_exp_mutex);
 mb_ret:
@@ -1212,8 +1212,8 @@ static int rcu_boost(struct rcu_node *rnp)
 	rt_mutex_lock(&mtx);  /* Side effect: boosts task t's priority. */
 	rt_mutex_unlock(&mtx);  /* Keep lockdep happy. */
 
-	return ACCESS_ONCE(rnp->exp_tasks) != NULL ||
-	       ACCESS_ONCE(rnp->boost_tasks) != NULL;
+	return ACCESS_ONCE_RW(rnp->exp_tasks) != NULL ||
+	       ACCESS_ONCE_RW(rnp->boost_tasks) != NULL;
 }
 
 /*
@@ -1703,7 +1703,7 @@ static void rcu_prepare_for_idle(int cpu)
 	int tne;
 
 	/* Handle nohz enablement switches conservatively. */
-	tne = ACCESS_ONCE(tick_nohz_enabled);
+	tne = ACCESS_ONCE_RW(tick_nohz_enabled);
 	if (tne != rdtp->tick_nohz_enabled_snap) {
 		if (rcu_cpu_has_callbacks(cpu, NULL))
 			invoke_rcu_core(); /* force nohz to see update. */
@@ -1927,7 +1927,7 @@ static void print_cpu_stall_info(struct rcu_state *rsp, int cpu)
 	       atomic_read(&rdtp->dynticks) & 0xfff,
 	       rdtp->dynticks_nesting, rdtp->dynticks_nmi_nesting,
 	       rdp->softirq_snap, kstat_softirqs_cpu(RCU_SOFTIRQ, cpu),
-	       ACCESS_ONCE(rsp->n_force_qs) - rsp->n_force_qs_gpstart,
+	       ACCESS_ONCE_RW(rsp->n_force_qs) - rsp->n_force_qs_gpstart,
 	       fast_no_hz);
 }
 
@@ -2075,12 +2075,12 @@ static void __call_rcu_nocb_enqueue(struct rcu_data *rdp,
 
 	/* Enqueue the callback on the nocb list and update counts. */
 	old_rhpp = xchg(&rdp->nocb_tail, rhtp);
-	ACCESS_ONCE(*old_rhpp) = rhp;
+	ACCESS_ONCE_RW(*old_rhpp) = rhp;
 	atomic_long_add(rhcount, &rdp->nocb_q_count);
 	atomic_long_add(rhcount_lazy, &rdp->nocb_q_count_lazy);
 
 	/* If we are not being polled and there is a kthread, awaken it ... */
-	t = ACCESS_ONCE(rdp->nocb_kthread);
+	t = ACCESS_ONCE_RW(rdp->nocb_kthread);
 	if (rcu_nocb_poll | !t)
 		return;
 	len = atomic_long_read(&rdp->nocb_q_count);
@@ -2180,7 +2180,7 @@ static void rcu_nocb_wait_gp(struct rcu_data *rdp)
 	for (;;) {
 		wait_event_interruptible(
 			rnp->nocb_gp_wq[c & 0x1],
-			(d = ULONG_CMP_GE(ACCESS_ONCE(rnp->completed), c)));
+			(d = ULONG_CMP_GE(ACCESS_ONCE_RW(rnp->completed), c)));
 		if (likely(d))
 			break;
 		flush_signals(current);
@@ -2207,7 +2207,7 @@ static int rcu_nocb_kthread(void *arg)
 		/* If not polling, wait for next batch of callbacks. */
 		if (!rcu_nocb_poll)
 			wait_event_interruptible(rdp->nocb_wq, rdp->nocb_head);
-		list = ACCESS_ONCE(rdp->nocb_head);
+		list = ACCESS_ONCE_RW(rdp->nocb_head);
 		if (!list) {
 			schedule_timeout_interruptible(1);
 			flush_signals(current);
@@ -2218,12 +2218,12 @@ static int rcu_nocb_kthread(void *arg)
 		 * Extract queued callbacks, update counts, and wait
 		 * for a grace period to elapse.
 		 */
-		ACCESS_ONCE(rdp->nocb_head) = NULL;
+		ACCESS_ONCE_RW(rdp->nocb_head) = NULL;
 		tail = xchg(&rdp->nocb_tail, &rdp->nocb_head);
 		c = atomic_long_xchg(&rdp->nocb_q_count, 0);
 		cl = atomic_long_xchg(&rdp->nocb_q_count_lazy, 0);
-		ACCESS_ONCE(rdp->nocb_p_count) += c;
-		ACCESS_ONCE(rdp->nocb_p_count_lazy) += cl;
+		ACCESS_ONCE_RW(rdp->nocb_p_count) += c;
+		ACCESS_ONCE_RW(rdp->nocb_p_count_lazy) += cl;
 		rcu_nocb_wait_gp(rdp);
 
 		/* Each pass through the following loop invokes a callback. */
@@ -2246,8 +2246,8 @@ static int rcu_nocb_kthread(void *arg)
 			list = next;
 		}
 		trace_rcu_batch_end(rdp->rsp->name, c, !!list, 0, 0, 1);
-		ACCESS_ONCE(rdp->nocb_p_count) -= c;
-		ACCESS_ONCE(rdp->nocb_p_count_lazy) -= cl;
+		ACCESS_ONCE_RW(rdp->nocb_p_count) -= c;
+		ACCESS_ONCE_RW(rdp->nocb_p_count_lazy) -= cl;
 		rdp->n_nocbs_invoked += c;
 	}
 	return 0;
@@ -2274,7 +2274,7 @@ static void __init rcu_spawn_nocb_kthreads(struct rcu_state *rsp)
 		t = kthread_run(rcu_nocb_kthread, rdp,
 				"rcuo%c/%d", rsp->abbr, cpu);
 		BUG_ON(IS_ERR(t));
-		ACCESS_ONCE(rdp->nocb_kthread) = t;
+		ACCESS_ONCE_RW(rdp->nocb_kthread) = t;
 	}
 }
 
@@ -2352,7 +2352,7 @@ static void rcu_kick_nohz_cpu(int cpu)
  */
 static void rcu_bind_gp_kthread(void)
 {
-	int cpu = ACCESS_ONCE(tick_do_timer_cpu);
+	int cpu = ACCESS_ONCE_RW(tick_do_timer_cpu);
 
 	if (cpu < 0 || cpu >= nr_cpu_ids)
 		return;
