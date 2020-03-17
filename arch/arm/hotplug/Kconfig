@@ -15,6 +15,6 @@ config MSM_HOTPLUG
 config BRICKED_HOTPLUG
 	   bool "Enable kernel based mpdecision"
 	   depends on MSM_RUN_QUEUE_STATS
-	   default y
+	   default n
 	   help
 		 This enables kernel based multi core control.
