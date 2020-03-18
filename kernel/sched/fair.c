@@ -6102,8 +6102,8 @@ static inline void update_sg_lb_stats(struct lb_env *env,
 
 		sgs->sum_weighted_load += weighted_cpuload(i);
 
-		if (rq->nr_running > 1)
-		 *overload = true;
+	//	if (rq->nr_running > 1)
+	//	 *overload = true;
 
 		if (idle_cpu(i))
 			sgs->idle_cpus++;
