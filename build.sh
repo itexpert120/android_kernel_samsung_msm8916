@@ -86,11 +86,11 @@ case $1 in
 		exit 1;;
 esac;
 
-export VARIANT_DEFCONFIG="$SELECTED_DEFCONFIG";	
+export VARIANT_DEFCONFIG="$SELECTED_DEFCONFIG";
 export SELINUX_DEFCONFIG="selinux_defconfig";
 export VERSION="zxkernel";
 export DEVICE="$SELECTED_DEVICE";
-export MAIN_DIR="$HOME/GrandPrime_G530BT_Kernel";
+export MAIN_DIR="/home/zeeshan/los16/kernel/samsung/msm8916";
 export OUT_DIR="$MAIN_DIR/products";
 [ ! -d $OUT_DIR/$VERSION/$DEVICE ] && mkdir -p $OUT_DIR/$VERSION/$DEVICE;
 
@@ -98,18 +98,18 @@ export OUT_DIR="$MAIN_DIR/products";
 echo -e "Building...\n";
 echo -e "Starting at `date`.";
 make msm8916_sec_defconfig O="out";
-make -j4 O="out";
+make -j8 O="out";
 # Build finish date/time
 export BUILD_FINISH_TIME=`date +"%Y%m%d-%H%M%S"`;
 
 # Check if the build succeded by checking if zImage exists, otherwise abort
 if [ -f out/arch/arm/boot/zImage ]; then
 	echo -e "Creating device tree blob (DTB) image...";
-	./dtbtool -o $MAIN_DIR/$VERSION/$DEVICE/dt.img -s 2048 -p out/scripts/dtc/ out/arch/arm/boot/dts/;
+	./dtbtool -o /home/zeeshan/los16/kernel/samsung/msm8916/products/zxkernel/$DEVICE/dt.img -s 2048 -p out/scripts/dtc/ out/arch/arm/boot/dts/;
 	echo -e "Copying kernel image...";
-	cp out/arch/$ARCH/boot/zImage $MAIN_DIR/$VERSION/$DEVICE;
+	cp out/arch/$ARCH/boot/zImage /home/zeeshan/los16/kernel/samsung/msm8916/products/zxkernel/$DEVICE;
 	echo -e "Copying kernel modules...";
-	find . -type f -iname "*.ko" -exec cp {} $MAIN_DIR/$VERSION/$DEVICE/modules/system/lib/modules \;;
+	find . -type f -iname "*.ko" -exec cp {} /home/zeeshan/los16/kernel/samsung/msm8916/products/zxkernel/$DEVICE/modules/system/lib/modules \;;
 else
 	echo -e "zImage was not found. That means this build failed. Please check your sources for any errors and try again.";
 	exit 1;
@@ -118,8 +118,8 @@ fi;
 # Flashable zip
 echo -e "Creating flashable zip...\n";
 cd $MAIN_DIR/common;
-zip -r9 $OUT_DIR/$VERSION/$DEVICE/$VERSION-$DEVICE-$BUILD_FINISH_TIME.zip . > /dev/null;
-cd $MAIN_DIR/$VERSION/$DEVICE;
-zip -r9 $OUT_DIR/$VERSION/$DEVICE/$VERSION-$DEVICE-$BUILD_FINISH_TIME.zip . > /dev/null;
+zip -r9 /home/zeeshan/los16/kernel/samsung/msm8916/products/zxkernel/$DEVICE/$VERSION-$DEVICE-$BUILD_FINISH_TIME.zip . > /dev/null;
+cd /home/zeeshan/los16/kernel/samsung/msm8916/products/zxkernel/$DEVICE;
+zip -r9 /home/zeeshan/los16/kernel/samsung/msm8916/products/zxkernel/$DEVICE/$VERSION-$DEVICE-$BUILD_FINISH_TIME.zip . > /dev/null;
 echo -e "Done!";
-echo -e "Build finished at `date`."; 
+echo -e "Build finished at `date`.";

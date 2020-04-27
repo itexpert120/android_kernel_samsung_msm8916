@@ -4658,10 +4658,10 @@ static int __init cfq_init(void)
 	if (!cfq_slice_async)
 		cfq_slice_async = 1;
         /* Do not touch cfq_slice_idle if it is zero */
-        /*
+
 	if (!cfq_slice_idle)
-		cfq_slice_idle = 1;
-	*/
+		cfq_slice_idle = 0;
+
 #ifdef CONFIG_CFQ_GROUP_IOSCHED
 	if (!cfq_group_idle)
 		cfq_group_idle = 1;
