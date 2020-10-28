@@ -115,7 +115,7 @@ config CGROUP_BFQIO
 
 choice
 	prompt "Default I/O scheduler"
-	default DEFAULT_CFQ
+	default DEFAULT_NOOP
 	help
 	  Select the I/O scheduler which will be used by default for all
 	  block devices.
